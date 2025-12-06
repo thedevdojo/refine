@@ -1,6 +1,6 @@
-# Refine - Live Blade Editor
+# Refine Your Blade Views
 
-A developer-only Chrome extension and Laravel package that enables instant, in-browser editing of Blade templates. Right-click any element, click "Edit in Refine", and modify the source code directly with zero page reloads.
+Refine is a live [Blade](https://laravel.com/docs/blade) editor. It enables instant, in-browser editing of Blade templates. Right-click any element, click "Edit in Refine", and modify the source code directly with zero page reloads.
 
 ## Features
 
