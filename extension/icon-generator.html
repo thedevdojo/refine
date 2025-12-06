@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refine Icon Generator</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .preview {
+            display: flex;
+            gap: 20px;
+            margin: 30px 0;
+            align-items: flex-end;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #3794ff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #2080ff;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: 500;
+        }
+        input[type="color"],
+        input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .instructions {
+            background: #f0f7ff;
+            border-left: 4px solid #3794ff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Refine Icon Generator</h1>
+
+        <div class="instructions">
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Customize the icon colors and text below</li>
+                <li>Click the download buttons to save each icon size</li>
+                <li>Move the downloaded files to <code>vendor/devdojo/refine/extension/icons/</code></li>
+            </ol>
+        </div>
+
+        <div class="controls">
+            <label for="bgColor">Background Color:</label>
+            <input type="color" id="bgColor" value="#3794ff">
+
+            <label for="textColor">Text Color:</label>
+            <input type="color" id="textColor" value="#ffffff">
+
+            <label for="text">Text (1-2 characters):</label>
+            <input type="text" id="text" value="R" maxlength="2">
+        </div>
+
+        <div class="preview">
+            <div>
+                <canvas id="canvas16" width="16" height="16"></canvas>
+                <p>16x16</p>
+            </div>
+            <div>
+                <canvas id="canvas48" width="48" height="48"></canvas>
+                <p>48x48</p>
+            </div>
+            <div>
+                <canvas id="canvas128" width="128" height="128"></canvas>
+                <p>128x128</p>
+            </div>
+        </div>
+
+        <div>
+            <button onclick="downloadIcon(16)">Download icon16.png</button>
+            <button onclick="downloadIcon(48)">Download icon48.png</button>
+            <button onclick="downloadIcon(128)">Download icon128.png</button>
+        </div>
+    </div>
+
+    <script>
+        const bgColorInput = document.getElementById('bgColor');
+        const textColorInput = document.getElementById('textColor');
+        const textInput = document.getElementById('text');
+
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const bgColor = bgColorInput.value;
+            const textColor = textColorInput.value;
+            const text = textInput.value || 'R';
+
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+
+            // Draw background
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, size, size);
+
+            // Draw text
+            ctx.fillStyle = textColor;
+            ctx.font = `bold ${size * 0.6}px system-ui, -apple-system, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, size / 2, size / 2);
+        }
+
+        function updateAllIcons() {
+            drawIcon(document.getElementById('canvas16'), 16);
+            drawIcon(document.getElementById('canvas48'), 48);
+            drawIcon(document.getElementById('canvas128'), 128);
+        }
+
+        function downloadIcon(size) {
+            const canvas = document.getElementById(`canvas${size}`);
+            const link = document.createElement('a');
+            link.download = `icon${size}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Update icons when inputs change
+        bgColorInput.addEventListener('input', updateAllIcons);
+        textColorInput.addEventListener('input', updateAllIcons);
+        textInput.addEventListener('input', updateAllIcons);
+
+        // Initial draw
+        updateAllIcons();
+    </script>
+</body>
+</html>
