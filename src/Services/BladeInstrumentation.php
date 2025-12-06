@@ -67,6 +67,12 @@ class BladeInstrumentation
         foreach ($lines as $lineNumber => $line) {
             $actualLineNumber = $lineNumber + 1;
 
+            // Skip lines that contain Blade/PHP directives to avoid breaking them
+            if ($this->containsBladeDirective($line)) {
+                $result[] = $line;
+                continue;
+            }
+
             // Check if this line contains an opening tag we want to instrument
             foreach ($this->targetTags as $tag) {
                 // Match opening tags like <div>, <div class="foo">, etc.
@@ -111,6 +117,12 @@ class BladeInstrumentation
 
         foreach ($lines as $lineNumber => $line) {
             $actualLineNumber = $lineNumber + 1;
+
+            // Skip lines that contain Blade/PHP directives to avoid breaking them
+            if ($this->containsBladeDirective($line)) {
+                $result[] = $line;
+                continue;
+            }
 
             // Match component tags like <x-alert>, <x-card.header>, etc.
             $pattern = '/<(x-[\w\.\-]+)(\s+[^>]*)?>/i';
@@ -233,5 +245,28 @@ class BladeInstrumentation
         }
 
         return null;
+    }
+
+    /**
+     * Check if a line contains Blade directives or PHP code that should not be instrumented.
+     */
+    protected function containsBladeDirective(string $line): bool
+    {
+        // Check for common Blade directives and PHP tags
+        $patterns = [
+            '/\{\{/',           // {{ Blade echo
+            '/\{!!/',           // {!! Raw echo
+            '/@\w+/',           // @directive
+            '/<\?php/',         // <?php
+            '/<\?=/',           // <?=
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $line)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

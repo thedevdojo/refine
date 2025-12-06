@@ -46,7 +46,7 @@ return [
         'attribute_name' => 'data-source',
 
         // HTML tags that will receive source attributes
-        'target_tags' => ['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'form', 'table', 'ul', 'ol', 'li', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'button', 'a', 'span'],
+        'target_tags' => ['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'form', 'table', 'ul', 'ol', 'li', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'button', 'a', 'span', 'input', 'textarea', 'select', 'label'],
 
         // Whether to instrument component tags (x-component-name)
         'instrument_components' => true,
