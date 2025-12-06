@@ -9,7 +9,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'refine-edit',
-    title: 'Edit in Refine',
+    title: 'Edit Code',
     contexts: ['all'],
   });
 
