@@ -49,17 +49,13 @@ class RefineServiceProvider extends ServiceProvider
     /**
      * Exclude Refine routes from CSRF verification.
      *
-     * Note: In Laravel 11+, users need to manually add CSRF exclusion
-     * in their bootstrap/app.php file:
-     *
-     * $middleware->validateCsrfTokens(except: ['refine/*']);
-     *
-     * This is documented in the installation guide.
+     * This is handled automatically by not including the web middleware group
+     * in our route registration. Instead, we apply only the necessary middleware
+     * components individually (sessions, cookies, etc.) without CSRF.
      */
     protected function excludeFromCsrf(): void
     {
-        // No automatic CSRF exclusion - users must configure manually
-        // This is intentional for Laravel 11+ to make the setup explicit
+        // CSRF exclusion is handled in loadRoutes() by not using the 'web' middleware group
     }
 
     /**
@@ -69,8 +65,15 @@ class RefineServiceProvider extends ServiceProvider
     {
         $routePrefix = config('refine.route_prefix', 'refine');
 
-        // Register routes with web middleware (CSRF exclusion is handled above)
-        \Illuminate\Support\Facades\Route::middleware(['web', \DevDojo\Refine\Http\Middleware\RefineMiddleware::class])
+        // Register routes with necessary middleware but WITHOUT the 'web' group
+        // This allows us to avoid CSRF verification while still having sessions, cookies, etc.
+        \Illuminate\Support\Facades\Route::middleware([
+                \Illuminate\Cookie\Middleware\EncryptCookies::class,
+                \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+                \Illuminate\Session\Middleware\StartSession::class,
+                \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+                \DevDojo\Refine\Http\Middleware\RefineMiddleware::class,
+            ])
             ->prefix($routePrefix)
             ->group(function () {
                 // Status endpoint to verify Refine is working
