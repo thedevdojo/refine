@@ -28,7 +28,43 @@
   let gsapLoaded = false;
   let messageHandler = null;
 
-  // Load GSAP
+  // Inject CSS animations for the editor
+  function injectAnimationStyles() {
+    if (document.getElementById('refine-animation-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'refine-animation-styles';
+    style.textContent = `
+      @keyframes refine-slide-up {
+        from {
+          transform: translateY(100%);
+        }
+        to {
+          transform: translateY(0%);
+        }
+      }
+
+      @keyframes refine-slide-down {
+        from {
+          transform: translateY(0%);
+        }
+        to {
+          transform: translateY(100%);
+        }
+      }
+
+      .refine-editor-enter {
+        animation: refine-slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .refine-editor-exit {
+        animation: refine-slide-down 0.35s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Load GSAP (optional enhancement)
   function loadGSAP() {
     return new Promise((resolve) => {
       if (gsapLoaded && typeof window.gsap !== 'undefined') {
@@ -51,7 +87,7 @@
         setTimeout(resolve, 50);
       };
       script.onerror = () => {
-        console.warn('GSAP failed to load, animations will be disabled');
+        console.warn('GSAP failed to load, using CSS animations');
         resolve();
       };
       document.head.appendChild(script);
@@ -238,8 +274,8 @@
     // Close any existing editor
     await closeEditor();
 
-    // Load GSAP for animations
-    await loadGSAP();
+    // Inject animation styles
+    injectAnimationStyles();
 
     // Create the editor container (positioned at bottom)
     const editor = document.createElement('div');
@@ -402,18 +438,11 @@
     document.body.appendChild(editor);
     currentEditor = editor;
 
-    // Animate in with GSAP - use requestAnimationFrame to ensure DOM is ready
+    // Trigger slide-up animation after element is in DOM
+    // Use requestAnimationFrame to ensure the browser has rendered the initial state
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (typeof window.gsap !== 'undefined') {
-          window.gsap.fromTo(editor,
-            { y: '100%' },
-            { y: '0%', duration: 0.5, ease: 'power3.out' }
-          );
-        } else {
-          editor.style.transform = 'translateY(0)';
-        }
-      });
+      // Add the animation class to trigger CSS animation
+      editor.classList.add('refine-editor-enter');
     });
 
     // Track editor ready state
@@ -543,21 +572,23 @@
       // Clear current editor reference immediately to prevent double-close
       currentEditor = null;
 
-      // Animate out with GSAP
-      if (typeof window.gsap !== 'undefined') {
-        window.gsap.to(editorToClose, {
-          y: '100%',
-          duration: 0.35,
-          ease: 'power2.in',
-          onComplete: () => {
-            editorToClose.remove();
-            resolve();
-          }
-        });
-      } else {
+      // Remove enter animation class and add exit animation class
+      editorToClose.classList.remove('refine-editor-enter');
+      editorToClose.classList.add('refine-editor-exit');
+
+      // Wait for animation to complete before removing element
+      editorToClose.addEventListener('animationend', () => {
         editorToClose.remove();
         resolve();
-      }
+      }, { once: true });
+
+      // Fallback: remove after animation duration if animationend doesn't fire
+      setTimeout(() => {
+        if (editorToClose.parentNode) {
+          editorToClose.remove();
+          resolve();
+        }
+      }, 400);
     });
   }
 
