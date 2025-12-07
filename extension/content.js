@@ -474,17 +474,13 @@
 
     // History button
     const historyButton = document.createElement('button');
-    historyButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M8 4V8L10.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M2.5 8C2.5 4.96243 4.96243 2.5 8 2.5C11.0376 2.5 13.5 4.96243 13.5 8C13.5 11.0376 11.0376 13.5 8 13.5C5.77915 13.5 3.87962 12.1606 3.04102 10.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      <path d="M2 7L3 10L5.5 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>`;
+    historyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10c-4.76 0-8.742-3.325-9.753-7.778a1.001 1.001 0 0 1 1.951-.444A8 8 0 1 0 5.071 8H7.5a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 2 0V6a9.98 9.98 0 0 1 8-4m0 5a1 1 0 0 1 1 1v3.586l2.957 2.957a1 1 0 1 1-1.414 1.414l-3.25-3.25A1 1 0 0 1 11 12V8a1 1 0 0 1 1-1"/></svg>`;
     historyButton.title = 'Version History';
     historyButton.style.cssText = `
       background: rgba(255, 255, 255, 0.08);
       color: #ffffff;
       border: none;
-      padding: 5px 10px;
+      padding: 6px 9px;
       border-radius: 6px;
       cursor: pointer;
       font-size: 12px;
@@ -596,7 +592,7 @@
     // History panel header
     const historyHeader = document.createElement('div');
     historyHeader.style.cssText = `
-      padding: 12px 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
