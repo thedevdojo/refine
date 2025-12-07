@@ -146,23 +146,6 @@
     // Close any existing editor
     closeEditor();
 
-    // Load Monaco Editor CSS if not already loaded
-    if (!document.getElementById('monaco-editor-css')) {
-      const monacoCSS = document.createElement('link');
-      monacoCSS.id = 'monaco-editor-css';
-      monacoCSS.rel = 'stylesheet';
-      monacoCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/editor/editor.main.min.css';
-      document.head.appendChild(monacoCSS);
-    }
-
-    // Load Monaco Editor loader script if not already loaded
-    if (!document.getElementById('monaco-editor-loader')) {
-      const monacoLoader = document.createElement('script');
-      monacoLoader.id = 'monaco-editor-loader';
-      monacoLoader.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/loader.min.js';
-      document.head.appendChild(monacoLoader);
-    }
-
     // Create the editor overlay
     const overlay = document.createElement('div');
     overlay.id = 'refine-editor-overlay';
@@ -278,10 +261,11 @@
     header.appendChild(title);
     header.appendChild(headerButtons);
 
-    // Create the Monaco editor container
-    const editorContainer = document.createElement('div');
-    editorContainer.id = 'refine-editor-textarea';
-    editorContainer.style.cssText = `
+    // Create iframe for Monaco editor
+    const iframe = document.createElement('iframe');
+    iframe.id = 'refine-editor-textarea';
+    iframe.src = chrome.runtime.getURL('monaco-editor.html');
+    iframe.style.cssText = `
       flex: 1;
       background: #1e1e1e;
       border: none;
@@ -302,7 +286,7 @@
 
     // Assemble the editor
     editor.appendChild(header);
-    editor.appendChild(editorContainer);
+    editor.appendChild(iframe);
     editor.appendChild(footer);
     overlay.appendChild(editor);
 
@@ -310,70 +294,67 @@
     document.body.appendChild(overlay);
     currentEditor = overlay;
 
-    // Variable to store Monaco editor instance
-    let monacoEditor = null;
+    // Track editor ready state
+    let editorReady = false;
 
-    // Initialize Monaco Editor
-    const initMonaco = () => {
-      if (typeof require !== 'undefined' && require.config) {
-        require.config({
-          paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs' }
-        });
+    // Set up message listener for iframe communication
+    const messageHandler = (event) => {
+      if (event.source !== iframe.contentWindow) return;
 
-        require(['vs/editor/editor.main'], () => {
-          monacoEditor = monaco.editor.create(editorContainer, {
-            value: data.full_contents,
-            language: 'blade',
-            theme: 'vs-dark',
-            automaticLayout: true,
-            fontSize: 14,
-            lineHeight: 22,
-            minimap: {
-              enabled: true
-            },
-            scrollBeyondLastLine: false,
-            folding: true,
-            lineNumbers: 'on',
-            renderWhitespace: 'selection'
-          });
+      const { type, payload } = event.data;
 
-          // Scroll to the target line
-          monacoEditor.revealLineInCenter(data.line_number);
-          monacoEditor.setPosition({ lineNumber: data.line_number, column: 1 });
-          monacoEditor.focus();
-
-          // Add keyboard shortcuts
-          monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, () => {
-            saveButton.click();
-          });
-
-          monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            saveButton.click();
-          });
-
-          monacoEditor.addCommand(monaco.KeyCode.Escape, () => {
-            closeEditor();
-          });
-        });
+      if (type === 'EDITOR_READY') {
+        editorReady = true;
+      } else if (type === 'SAVE') {
+        saveButton.click();
+      } else if (type === 'CANCEL') {
+        closeEditor();
+      } else if (type === 'VALUE_RESPONSE') {
+        // Handle the value response for save operations
+        if (window.refineEditorCallback) {
+          window.refineEditorCallback(payload.value);
+          window.refineEditorCallback = null;
+        }
       }
     };
 
-    // Wait for Monaco loader to be ready
-    const checkMonacoReady = setInterval(() => {
-      if (typeof require !== 'undefined') {
-        clearInterval(checkMonacoReady);
-        initMonaco();
-      }
-    }, 100);
+    window.addEventListener('message', messageHandler);
+
+    // Initialize Monaco editor in iframe once it's loaded
+    iframe.onload = () => {
+      iframe.contentWindow.postMessage({
+        type: 'INIT_EDITOR',
+        payload: {
+          value: data.full_contents,
+          language: 'blade',
+          theme: 'vs-dark',
+          fontSize: 14,
+          lineHeight: 22,
+          minimap: true,
+          lineNumber: data.line_number
+        }
+      }, '*');
+    };
+
+    // Helper function to get editor value
+    const getEditorValue = () => {
+      return new Promise((resolve) => {
+        if (!editorReady) {
+          showNotification('Editor not ready yet', 'error');
+          resolve(null);
+          return;
+        }
+
+        window.refineEditorCallback = resolve;
+        iframe.contentWindow.postMessage({ type: 'GET_VALUE' }, '*');
+      });
+    };
 
     // Event handlers
-    saveButton.onclick = () => {
-      if (!monacoEditor) {
-        showNotification('Editor not ready yet', 'error');
-        return;
-      }
+    saveButton.onclick = async () => {
+      const newContents = await getEditorValue();
+      if (!newContents) return;
 
-      const newContents = monacoEditor.getValue();
       saveButton.disabled = true;
       saveButton.textContent = 'Saving...';
       saveButton.style.background = '#5a5a5a';
@@ -398,13 +379,10 @@
         });
     };
 
-    saveCloseButton.onclick = () => {
-      if (!monacoEditor) {
-        showNotification('Editor not ready yet', 'error');
-        return;
-      }
+    saveCloseButton.onclick = async () => {
+      const newContents = await getEditorValue();
+      if (!newContents) return;
 
-      const newContents = monacoEditor.getValue();
       saveCloseButton.disabled = true;
       saveCloseButton.textContent = 'Saving...';
       saveCloseButton.style.background = '#5a5a5a';
@@ -427,11 +405,15 @@
         });
     };
 
-    cancelButton.onclick = closeEditor;
+    cancelButton.onclick = () => {
+      window.removeEventListener('message', messageHandler);
+      closeEditor();
+    };
 
     // Close on overlay click
     overlay.onclick = (e) => {
       if (e.target === overlay) {
+        window.removeEventListener('message', messageHandler);
         closeEditor();
       }
     };
