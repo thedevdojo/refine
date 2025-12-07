@@ -124,14 +124,20 @@ class RefineController extends Controller
         // Clear the view cache to ensure the changes are reflected
         $this->clearViewCache();
 
+        // Clear response cache if present (for apps using response caching middleware)
+        $this->clearResponseCache();
+
         return response()->json([
             'success' => true,
             'message' => 'File saved successfully',
             'data' => [
                 'file_path' => $filePath,
                 'view_path' => $viewPath,
+                'cache_cleared' => true,
             ],
-        ]);
+        ])->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+          ->header('Pragma', 'no-cache')
+          ->header('Expires', '0');
     }
 
     /**
@@ -197,6 +203,24 @@ class RefineController extends Controller
             Artisan::call('view:clear');
         } catch (\Exception $e) {
             // Silently fail if view:clear doesn't work
+        }
+    }
+
+    /**
+     * Clear response cache (if the app uses response caching).
+     *
+     * @return void
+     */
+    protected function clearResponseCache(): void
+    {
+        try {
+            // Clear cache using Cache facade
+            if (class_exists(\Illuminate\Support\Facades\Cache::class)) {
+                // Try to clear all response cache keys
+                \Illuminate\Support\Facades\Cache::flush();
+            }
+        } catch (\Exception $e) {
+            // Silently fail if cache clearing doesn't work
         }
     }
 

@@ -119,7 +119,6 @@
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': getCSRFToken(),
       },
       body: JSON.stringify({
         ref: sourceRef,
@@ -138,25 +137,6 @@
     }
 
     return json;
-  }
-
-  /**
-   * Get the CSRF token from the page (Laravel specific)
-   */
-  function getCSRFToken() {
-    // Try meta tag first
-    const metaTag = document.querySelector('meta[name="csrf-token"]');
-    if (metaTag) {
-      return metaTag.getAttribute('content');
-    }
-
-    // Fallback: try to find it in a form
-    const tokenInput = document.querySelector('input[name="_token"]');
-    if (tokenInput) {
-      return tokenInput.value;
-    }
-
-    return '';
   }
 
   /**
@@ -226,7 +206,7 @@
 
     // Save button
     const saveButton = document.createElement('button');
-    saveButton.textContent = 'Save';
+    saveButton.innerHTML = 'Save <span style="opacity: 0.7; font-size: 11px;">⏎</span>';
     saveButton.style.cssText = `
       background: #3794ff;
       color: white;
@@ -236,9 +216,28 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     `;
     saveButton.onmouseover = () => saveButton.style.background = '#2080ff';
     saveButton.onmouseout = () => saveButton.style.background = '#3794ff';
+
+    // Save & Close button
+    const saveCloseButton = document.createElement('button');
+    saveCloseButton.textContent = 'Save & Close';
+    saveCloseButton.style.cssText = `
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    `;
+    saveCloseButton.onmouseover = () => saveCloseButton.style.background = '#218838';
+    saveCloseButton.onmouseout = () => saveCloseButton.style.background = '#28a745';
 
     // Cancel button
     const cancelButton = document.createElement('button');
@@ -257,6 +256,7 @@
     cancelButton.onmouseout = () => cancelButton.style.background = '#5a5a5a';
 
     headerButtons.appendChild(saveButton);
+    headerButtons.appendChild(saveCloseButton);
     headerButtons.appendChild(cancelButton);
     header.appendChild(title);
     header.appendChild(headerButtons);
@@ -307,11 +307,13 @@
       saveSource(sourceRef, newContents)
         .then(() => {
           showNotification('Saved successfully!', 'success');
-          closeEditor();
+          saveButton.disabled = false;
+          saveButton.textContent = 'Save';
+          saveButton.style.background = '#3794ff';
 
-          // Reload the page to show changes
+          // Force hard reload to bypass cache
           setTimeout(() => {
-            window.location.reload();
+            hardReload();
           }, 500);
         })
         .catch(error => {
@@ -319,6 +321,30 @@
           saveButton.disabled = false;
           saveButton.textContent = 'Save';
           saveButton.style.background = '#3794ff';
+        });
+    };
+
+    saveCloseButton.onclick = () => {
+      const newContents = textarea.value;
+      saveCloseButton.disabled = true;
+      saveCloseButton.textContent = 'Saving...';
+      saveCloseButton.style.background = '#5a5a5a';
+
+      saveSource(sourceRef, newContents)
+        .then(() => {
+          showNotification('Saved successfully!', 'success');
+          closeEditor();
+
+          // Force hard reload to bypass cache
+          setTimeout(() => {
+            hardReload();
+          }, 500);
+        })
+        .catch(error => {
+          showNotification('Save failed: ' + error.message, 'error');
+          saveCloseButton.disabled = false;
+          saveCloseButton.textContent = 'Save & Close';
+          saveCloseButton.style.background = '#28a745';
         });
     };
 
@@ -335,6 +361,12 @@
     textarea.onkeydown = (e) => {
       // Cmd/Ctrl + S to save
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveButton.click();
+      }
+
+      // Cmd/Ctrl + Enter to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         saveButton.click();
       }
@@ -396,6 +428,32 @@
       currentEditor.remove();
       currentEditor = null;
     }
+  }
+
+  /**
+   * Force a hard reload that bypasses browser cache
+   */
+  function hardReload() {
+    // Clear browser cache for this page using multiple methods
+
+    // Method 1: Delete service worker cache if present
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
+
+    // Method 2: Add cache-busting parameter and force reload
+    const url = new URL(window.location.href);
+
+    // Remove any existing refine reload parameter
+    url.searchParams.delete('_refine_reload');
+
+    // Add new timestamp
+    url.searchParams.set('_refine_reload', Date.now());
+
+    // Method 3: Use location.replace to bypass history
+    window.location.replace(url.toString());
   }
 
   /**
