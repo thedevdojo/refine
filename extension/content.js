@@ -66,22 +66,6 @@
       .refine-editor-exit {
         animation: refine-slide-down 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
       }
-
-      .refine-editor-minimized {
-        height: auto !important;
-      }
-
-      .refine-editor-minimized .refine-iframe,
-      .refine-editor-minimized .refine-footer {
-        display: none !important;
-      }
-
-      .refine-editor-maximized {
-        height: calc(100vh - 6px) !important;
-        bottom: 3px !important;
-        left: 3px !important;
-        right: 3px !important;
-      }
     `;
     document.head.appendChild(style);
   }
@@ -360,6 +344,7 @@
       border: none;
       cursor: pointer;
       padding: 0;
+      outline: none;
       transition: all 0.15s ease;
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
     `;
@@ -382,6 +367,7 @@
       border: none;
       cursor: pointer;
       padding: 0;
+      outline: none;
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
       transition: all 0.15s ease;
     `;
@@ -404,6 +390,7 @@
       border: none;
       cursor: pointer;
       padding: 0;
+      outline: none;
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
       transition: all 0.15s ease;
     `;
@@ -485,7 +472,6 @@
     // Create iframe for Monaco editor
     const iframe = document.createElement('iframe');
     iframe.id = 'refine-editor-textarea';
-    iframe.className = 'refine-iframe';
     iframe.src = chrome.runtime.getURL('monaco-editor.html');
     iframe.style.cssText = `
       flex: 1;
@@ -496,7 +482,6 @@
 
     // Create the footer with file info
     const footer = document.createElement('div');
-    footer.className = 'refine-footer';
     footer.style.cssText = `
       background: #2a2a2c;
       color: #636366;
@@ -540,20 +525,45 @@
     // Track editor ready state
     let editorReady = false;
 
+    // Store original height for restore
+    const originalHeight = 'calc(55vh - 7px)';
+    const minimizedHeight = header.offsetHeight + 'px';
+
     // Minimize function
     const minimizeEditor = () => {
       if (isMinimized) return;
       isMinimized = true;
-      editor.classList.add('refine-editor-minimized');
-      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      // Set transition and animate to header height
+      editor.style.transition = 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      editor.style.height = minimizedHeight;
+
+      // Hide content after animation starts
+      setTimeout(() => {
+        iframe.style.display = 'none';
+        footer.style.display = 'none';
+      }, 50);
     };
 
     // Restore from minimized
     const restoreEditor = () => {
       if (!isMinimized) return;
       isMinimized = false;
-      editor.classList.remove('refine-editor-minimized');
-      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      // Show content first
+      iframe.style.display = '';
+      footer.style.display = '';
+
+      // Animate back to original height
+      editor.style.transition = 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      // Use maximized height if maximized, otherwise original
+      if (isMaximized) {
+        editor.style.height = 'calc(100vh - 6px)';
+      } else {
+        editor.style.height = originalHeight;
+      }
+
       // Focus the editor after restoring
       setTimeout(() => {
         iframe.contentWindow.postMessage({ type: 'FOCUS' }, '*');
@@ -572,9 +582,15 @@
       editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
 
       if (isMaximized) {
-        editor.classList.add('refine-editor-maximized');
+        editor.style.height = 'calc(100vh - 6px)';
+        editor.style.bottom = '3px';
+        editor.style.left = '3px';
+        editor.style.right = '3px';
       } else {
-        editor.classList.remove('refine-editor-maximized');
+        editor.style.height = originalHeight;
+        editor.style.bottom = '7px';
+        editor.style.left = '7px';
+        editor.style.right = '7px';
       }
     };
 
@@ -588,8 +604,12 @@
         editorReady = true;
       } else if (type === 'SAVE') {
         saveButton.click();
-      } else if (type === 'MINIMIZE') {
-        if (!isMinimized) {
+      } else if (type === 'ESCAPE') {
+        if (isMaximized) {
+          // If maximized, restore to half view
+          toggleMaximize();
+        } else if (!isMinimized) {
+          // If not maximized and not minimized, minimize
           minimizeEditor();
         }
       } else if (type === 'VALUE_RESPONSE') {
@@ -603,11 +623,15 @@
 
     window.addEventListener('message', messageHandler);
 
-    // Escape key handler - minimize instead of close
+    // Escape key handler - exit maximize first, then minimize
     const escapeHandler = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (!isMinimized) {
+        if (isMaximized) {
+          // If maximized, restore to half view
+          toggleMaximize();
+        } else if (!isMinimized) {
+          // If not maximized and not minimized, minimize
           minimizeEditor();
         }
       }

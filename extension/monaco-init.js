@@ -123,9 +123,9 @@ function initEditor(config) {
       }
     }, true);
 
-    // Escape to minimize
+    // Escape key - let parent handle the logic
     editor.addCommand(monaco.KeyCode.Escape, () => {
-      window.parent.postMessage({ type: 'MINIMIZE' }, '*');
+      window.parent.postMessage({ type: 'ESCAPE' }, '*');
     });
   });
 }

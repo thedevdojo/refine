@@ -1,6 +1,9 @@
 # Refine Your Blade Views
 
-Refine is a live [Blade](https://laravel.com/docs/blade) editor. It enables instant, in-browser editing of Blade templates. Right-click any element, click "Edit in Refine", and modify the source code directly with zero page reloads.
+Refine is a live [Blade](https://laravel.com/docs/blade) editor. It enables instant, in-browser editing of Blade templates. Right-click any element, click "Edit Code", and modify the source code directly.
+
+> [!WARNING]  
+> This is still actively being developed so there may be a few issues. I have tested this with Blade Includes and Components; however, more testing is needed for Livewire and Volt.
 
 ## Features
 
@@ -10,7 +13,7 @@ Refine is a live [Blade](https://laravel.com/docs/blade) editor. It enables inst
 - **Smart DOM Traversal**: Finds the originating Blade file even in nested components
 - **Instant Saves**: Write changes directly to disk and hot-reload affected regions
 - **Backup System**: Automatically backs up files before making changes
-- **Dev-Only**: Completely disabled in production environments
+- **Dev-Only**: This package should not be installed in production.
 
 ## Installation
 
@@ -24,22 +27,15 @@ The package will auto-register via Laravel's package discovery.
 
 ### Step 2: Load the Chrome Extension
 
+Download the code from this repo and put the `extension` folder somewhere permanent on your computer. This could be your Documents folder or a folder in your home directory.
+
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Enable "Developer mode" (toggle in top-right corner)
 3. Click "Load unpacked"
-4. Navigate to `vendor/devdojo/refine/extension` in your Laravel project
+4. Navigate to the **extension**** folder you saved to your computer
 5. Select the folder and click "Open"
 
-### Step 3: Add Icons (Optional)
-
-The extension requires three icon files in `vendor/devdojo/refine/extension/icons/`:
-- `icon16.png` (16x16 pixels)
-- `icon48.png` (48x48 pixels)
-- `icon128.png` (128x128 pixels)
-
-You can create simple placeholder icons using any image editor, or generate them online.
-
-### Step 4: Verify Installation
+### Step 3: Verify Installation
 
 1. Start your Laravel development server (`php artisan serve` or Valet/Herd)
 2. Visit any page in your application
@@ -49,7 +45,7 @@ You can create simple placeholder icons using any image editor, or generate them
 ## Usage
 
 1. **Right-click any element** on your page
-2. **Click "Edit in Refine"** from the context menu
+2. **Click "Edit Code"** from the context menu
 3. **Edit the Blade source code** in the floating editor
 4. **Press Cmd/Ctrl+S or click Save** to write changes
 5. **Page auto-reloads** to show your changes
@@ -57,7 +53,7 @@ You can create simple placeholder icons using any image editor, or generate them
 ### Keyboard Shortcuts
 
 - `Cmd/Ctrl + S` - Save changes
-- `Escape` - Close editor without saving
+- `Escape` - Minimize editor
 - `Tab` - Insert 4 spaces (proper indentation)
 
 ## How It Works
@@ -71,7 +67,7 @@ You can create simple placeholder icons using any image editor, or generate them
 
 ### Frontend (Chrome Extension)
 
-1. **Context Menu**: Registers a "Edit in Refine" option in the right-click menu
+1. **Context Menu**: Registers a "Edit Code" option in the right-click menu
 2. **DOM Traversal**: Finds the nearest parent element with a `data-source` attribute
 3. **API Communication**: Fetches source code from Laravel and sends updates back
 4. **Floating UI**: Renders a dark-themed code editor overlay with save/cancel actions
@@ -193,7 +189,6 @@ Saves updated source code.
 
 **Solutions**:
 - Check Chrome's extension page for errors
-- Ensure all three icon files exist in `extension/icons/`
 - Reload the extension after making changes
 - Check browser console for JavaScript errors
 
