@@ -119,7 +119,6 @@
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-CSRF-TOKEN': getCSRFToken(),
       },
       body: JSON.stringify({
         ref: sourceRef,
@@ -138,25 +137,6 @@
     }
 
     return json;
-  }
-
-  /**
-   * Get the CSRF token from the page (Laravel specific)
-   */
-  function getCSRFToken() {
-    // Try meta tag first
-    const metaTag = document.querySelector('meta[name="csrf-token"]');
-    if (metaTag) {
-      return metaTag.getAttribute('content');
-    }
-
-    // Fallback: try to find it in a form
-    const tokenInput = document.querySelector('input[name="_token"]');
-    if (tokenInput) {
-      return tokenInput.value;
-    }
-
-    return '';
   }
 
   /**
@@ -240,6 +220,22 @@
     saveButton.onmouseover = () => saveButton.style.background = '#2080ff';
     saveButton.onmouseout = () => saveButton.style.background = '#3794ff';
 
+    // Save & Close button
+    const saveCloseButton = document.createElement('button');
+    saveCloseButton.textContent = 'Save & Close';
+    saveCloseButton.style.cssText = `
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    `;
+    saveCloseButton.onmouseover = () => saveCloseButton.style.background = '#218838';
+    saveCloseButton.onmouseout = () => saveCloseButton.style.background = '#28a745';
+
     // Cancel button
     const cancelButton = document.createElement('button');
     cancelButton.textContent = 'Cancel';
@@ -257,6 +253,7 @@
     cancelButton.onmouseout = () => cancelButton.style.background = '#5a5a5a';
 
     headerButtons.appendChild(saveButton);
+    headerButtons.appendChild(saveCloseButton);
     headerButtons.appendChild(cancelButton);
     header.appendChild(title);
     header.appendChild(headerButtons);
@@ -307,7 +304,9 @@
       saveSource(sourceRef, newContents)
         .then(() => {
           showNotification('Saved successfully!', 'success');
-          closeEditor();
+          saveButton.disabled = false;
+          saveButton.textContent = 'Save';
+          saveButton.style.background = '#3794ff';
 
           // Reload the page to show changes
           setTimeout(() => {
@@ -319,6 +318,30 @@
           saveButton.disabled = false;
           saveButton.textContent = 'Save';
           saveButton.style.background = '#3794ff';
+        });
+    };
+
+    saveCloseButton.onclick = () => {
+      const newContents = textarea.value;
+      saveCloseButton.disabled = true;
+      saveCloseButton.textContent = 'Saving...';
+      saveCloseButton.style.background = '#5a5a5a';
+
+      saveSource(sourceRef, newContents)
+        .then(() => {
+          showNotification('Saved successfully!', 'success');
+          closeEditor();
+
+          // Reload the page to show changes
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        })
+        .catch(error => {
+          showNotification('Save failed: ' + error.message, 'error');
+          saveCloseButton.disabled = false;
+          saveCloseButton.textContent = 'Save & Close';
+          saveCloseButton.style.background = '#28a745';
         });
     };
 

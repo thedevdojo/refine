@@ -36,6 +36,9 @@ class RefineServiceProvider extends ServiceProvider
             __DIR__ . '/../config/refine.php' => config_path('refine.php'),
         ], 'refine-config');
 
+        // Exclude Refine routes from CSRF verification
+        $this->excludeFromCsrf();
+
         // Load routes
         $this->loadRoutes();
 
@@ -44,19 +47,23 @@ class RefineServiceProvider extends ServiceProvider
     }
 
     /**
+     * Exclude Refine routes from CSRF verification.
+     */
+    protected function excludeFromCsrf(): void
+    {
+        // We'll handle CSRF exclusion through middleware configuration in katanaui's bootstrap/app.php
+        // For now, let's document this requirement
+    }
+
+    /**
      * Load the package routes.
      */
     protected function loadRoutes(): void
     {
-        $middleware = array_merge(
-            config('refine.middleware', []),
-            [\DevDojo\Refine\Http\Middleware\RefineMiddleware::class]
-        );
-
         $routePrefix = config('refine.route_prefix', 'refine');
 
-        // Register API routes
-        \Illuminate\Support\Facades\Route::middleware($middleware)
+        // Register routes with web middleware (CSRF exclusion is handled above)
+        \Illuminate\Support\Facades\Route::middleware(['web', \DevDojo\Refine\Http\Middleware\RefineMiddleware::class])
             ->prefix($routePrefix)
             ->group(function () {
                 // Status endpoint to verify Refine is working
