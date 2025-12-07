@@ -123,9 +123,9 @@ function initEditor(config) {
       }
     }, true);
 
-    // Escape to close
+    // Escape to minimize
     editor.addCommand(monaco.KeyCode.Escape, () => {
-      window.parent.postMessage({ type: 'CANCEL' }, '*');
+      window.parent.postMessage({ type: 'MINIMIZE' }, '*');
     });
   });
 }

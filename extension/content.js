@@ -27,6 +27,8 @@
   let saveTimeout = null;
   let gsapLoaded = false;
   let messageHandler = null;
+  let isMinimized = false;
+  let isMaximized = false;
 
   // Inject CSS animations for the editor
   function injectAnimationStyles() {
@@ -63,6 +65,22 @@
 
       .refine-editor-exit {
         animation: refine-slide-down 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+      }
+
+      .refine-editor-minimized {
+        height: auto !important;
+      }
+
+      .refine-editor-minimized .refine-iframe,
+      .refine-editor-minimized .refine-footer {
+        display: none !important;
+      }
+
+      .refine-editor-maximized {
+        height: calc(100vh - 6px) !important;
+        bottom: 3px !important;
+        left: 3px !important;
+        right: 3px !important;
       }
     `;
     document.head.appendChild(style);
@@ -289,7 +307,7 @@
       bottom: 7px;
       left: 7px;
       right: 7px;
-      height: calc(55vh - 10px);
+      height: calc(55vh - 7px);
       background: #1a1a1c;
       z-index: 999999;
       display: flex;
@@ -354,7 +372,7 @@
       redButton.style.transform = 'scale(1)';
     };
 
-    // Yellow button (decorative)
+    // Yellow button (minimize)
     const yellowButton = document.createElement('button');
     yellowButton.style.cssText = `
       width: 12px;
@@ -362,12 +380,21 @@
       border-radius: 50%;
       background: #febc2e;
       border: none;
-      cursor: default;
+      cursor: pointer;
       padding: 0;
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+      transition: all 0.15s ease;
     `;
+    yellowButton.onmouseover = () => {
+      yellowButton.style.background = '#f5a623';
+      yellowButton.style.transform = 'scale(1.1)';
+    };
+    yellowButton.onmouseout = () => {
+      yellowButton.style.background = '#febc2e';
+      yellowButton.style.transform = 'scale(1)';
+    };
 
-    // Green button (decorative)
+    // Green button (maximize)
     const greenButton = document.createElement('button');
     greenButton.style.cssText = `
       width: 12px;
@@ -375,10 +402,19 @@
       border-radius: 50%;
       background: #28c840;
       border: none;
-      cursor: default;
+      cursor: pointer;
       padding: 0;
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+      transition: all 0.15s ease;
     `;
+    greenButton.onmouseover = () => {
+      greenButton.style.background = '#1db954';
+      greenButton.style.transform = 'scale(1.1)';
+    };
+    greenButton.onmouseout = () => {
+      greenButton.style.background = '#28c840';
+      greenButton.style.transform = 'scale(1)';
+    };
 
     trafficLights.appendChild(redButton);
     trafficLights.appendChild(yellowButton);
@@ -449,6 +485,7 @@
     // Create iframe for Monaco editor
     const iframe = document.createElement('iframe');
     iframe.id = 'refine-editor-textarea';
+    iframe.className = 'refine-iframe';
     iframe.src = chrome.runtime.getURL('monaco-editor.html');
     iframe.style.cssText = `
       flex: 1;
@@ -459,6 +496,7 @@
 
     // Create the footer with file info
     const footer = document.createElement('div');
+    footer.className = 'refine-footer';
     footer.style.cssText = `
       background: #2a2a2c;
       color: #636366;
@@ -502,6 +540,44 @@
     // Track editor ready state
     let editorReady = false;
 
+    // Minimize function
+    const minimizeEditor = () => {
+      if (isMinimized) return;
+      isMinimized = true;
+      editor.classList.add('refine-editor-minimized');
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+    };
+
+    // Restore from minimized
+    const restoreEditor = () => {
+      if (!isMinimized) return;
+      isMinimized = false;
+      editor.classList.remove('refine-editor-minimized');
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      // Focus the editor after restoring
+      setTimeout(() => {
+        iframe.contentWindow.postMessage({ type: 'FOCUS' }, '*');
+      }, 100);
+    };
+
+    // Maximize/restore function
+    const toggleMaximize = () => {
+      // If minimized, restore first
+      if (isMinimized) {
+        restoreEditor();
+        return;
+      }
+
+      isMaximized = !isMaximized;
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      if (isMaximized) {
+        editor.classList.add('refine-editor-maximized');
+      } else {
+        editor.classList.remove('refine-editor-maximized');
+      }
+    };
+
     // Set up message listener for iframe communication
     messageHandler = (event) => {
       if (event.source !== iframe.contentWindow) return;
@@ -512,8 +588,10 @@
         editorReady = true;
       } else if (type === 'SAVE') {
         saveButton.click();
-      } else if (type === 'CANCEL') {
-        closeEditor();
+      } else if (type === 'MINIMIZE') {
+        if (!isMinimized) {
+          minimizeEditor();
+        }
       } else if (type === 'VALUE_RESPONSE') {
         // Handle the value response for save operations
         if (window.refineEditorCallback) {
@@ -525,15 +603,26 @@
 
     window.addEventListener('message', messageHandler);
 
-    // Escape key handler
+    // Escape key handler - minimize instead of close
     const escapeHandler = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        closeEditor();
+        if (!isMinimized) {
+          minimizeEditor();
+        }
       }
     };
     document.addEventListener('keydown', escapeHandler);
     editor.escapeHandler = escapeHandler;
+
+    // Click outside handler - minimize the editor
+    const clickOutsideHandler = (e) => {
+      if (!editor.contains(e.target) && !isMinimized) {
+        minimizeEditor();
+      }
+    };
+    document.addEventListener('mousedown', clickOutsideHandler);
+    editor.clickOutsideHandler = clickOutsideHandler;
 
     // Initialize Monaco editor in iframe once it's loaded
     iframe.onload = () => {
@@ -565,8 +654,41 @@
       });
     };
 
+    // Header click to restore from minimized
+    header.onclick = (e) => {
+      // Don't trigger if clicking on traffic lights or save button
+      if (e.target === redButton || e.target === yellowButton ||
+          e.target === greenButton || e.target === saveButton ||
+          trafficLights.contains(e.target) || headerButtons.contains(e.target)) {
+        return;
+      }
+      if (isMinimized) {
+        restoreEditor();
+      }
+    };
+
+    // Update header cursor when minimized
+    header.style.cursor = 'default';
+
     // Event handlers
-    redButton.onclick = () => closeEditor();
+    redButton.onclick = (e) => {
+      e.stopPropagation();
+      closeEditor();
+    };
+
+    yellowButton.onclick = (e) => {
+      e.stopPropagation();
+      if (isMinimized) {
+        restoreEditor();
+      } else {
+        minimizeEditor();
+      }
+    };
+
+    greenButton.onclick = (e) => {
+      e.stopPropagation();
+      toggleMaximize();
+    };
 
     saveButton.onclick = async () => {
       const newContents = await getEditorValue();
@@ -610,11 +732,20 @@
         return;
       }
 
+      // Reset state
+      isMinimized = false;
+      isMaximized = false;
+
       const editorToClose = currentEditor;
 
       // Remove escape key handler
       if (editorToClose.escapeHandler) {
         document.removeEventListener('keydown', editorToClose.escapeHandler);
+      }
+
+      // Remove click outside handler
+      if (editorToClose.clickOutsideHandler) {
+        document.removeEventListener('mousedown', editorToClose.clickOutsideHandler);
       }
 
       // Remove message handler
