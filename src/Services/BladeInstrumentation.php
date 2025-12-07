@@ -61,50 +61,55 @@ class BladeInstrumentation
      */
     protected function instrumentOpeningTags(string $value, string $viewPath): string
     {
-        $lines = explode("\n", $value);
-        $result = [];
+        // Build a regex pattern for all target tags
+        $tagPattern = implode('|', array_map(function($tag) {
+            return preg_quote($tag, '/');
+        }, $this->targetTags));
 
-        foreach ($lines as $lineNumber => $line) {
-            $actualLineNumber = $lineNumber + 1;
+        // Match opening tags (including multi-line) and capture their position
+        $pattern = '/<(' . $tagPattern . ')(\s+[^>]*)?>/is';
 
-            // Skip lines that contain Blade/PHP directives to avoid breaking them
-            if ($this->containsBladeDirective($line)) {
-                $result[] = $line;
+        $offset = 0;
+        while (preg_match($pattern, $value, $matches, PREG_OFFSET_CAPTURE, $offset)) {
+            $fullTag = $matches[0][0];
+            $tagPosition = $matches[0][1];
+            $tagName = $matches[1][0];
+            $attributes = isset($matches[2]) ? $matches[2][0] : '';
+
+            // Check if this tag already has the data-source attribute
+            if (strpos($attributes, $this->attributeName) !== false) {
+                $offset = $tagPosition + strlen($fullTag);
                 continue;
             }
 
-            // Check if this line contains an opening tag we want to instrument
-            foreach ($this->targetTags as $tag) {
-                // Match opening tags like <div>, <div class="foo">, etc.
-                $pattern = '/<(' . preg_quote($tag, '/') . ')(\s+[^>]*)?>/i';
-
-                if (preg_match($pattern, $line, $matches)) {
-                    $fullTag = $matches[0];
-                    $tagName = $matches[1];
-                    $attributes = $matches[2] ?? '';
-
-                    // Don't add if the tag already has the attribute
-                    if (strpos($attributes, $this->attributeName) === false) {
-                        $sourceRef = $this->encodeSourceReference($viewPath, $actualLineNumber);
-
-                        // Insert the data-source attribute
-                        if (trim($attributes)) {
-                            $newTag = "<{$tagName}{$attributes} {$this->attributeName}=\"{$sourceRef}\">";
-                        } else {
-                            $newTag = "<{$tagName} {$this->attributeName}=\"{$sourceRef}\">";
-                        }
-
-                        $line = str_replace($fullTag, $newTag, $line);
-                    }
-
-                    break; // Only instrument the first tag per line
-                }
+            // Check if the matched tag contains Blade/PHP code that could break
+            if ($this->containsBladeDirective($fullTag)) {
+                $offset = $tagPosition + strlen($fullTag);
+                continue;
             }
 
-            $result[] = $line;
+            // Calculate line number by counting newlines before this position
+            $lineNumber = substr_count(substr($value, 0, $tagPosition), "\n") + 1;
+            $sourceRef = $this->encodeSourceReference($viewPath, $lineNumber);
+
+            // Insert the data-source attribute right before the closing > or />
+            // Handle self-closing tags
+            if (str_ends_with(rtrim($fullTag), '/>')) {
+                $tagWithoutClosing = rtrim(substr($fullTag, 0, -2));
+                $newTag = $tagWithoutClosing . ' ' . $this->attributeName . '="' . $sourceRef . '" />';
+            } else {
+                $tagWithoutClosing = rtrim($fullTag, '>');
+                $newTag = $tagWithoutClosing . ' ' . $this->attributeName . '="' . $sourceRef . '">';
+            }
+
+            // Replace in the value
+            $value = substr_replace($value, $newTag, $tagPosition, strlen($fullTag));
+
+            // Move offset forward
+            $offset = $tagPosition + strlen($newTag);
         }
 
-        return implode("\n", $result);
+        return $value;
     }
 
     /**
@@ -112,44 +117,50 @@ class BladeInstrumentation
      */
     protected function instrumentComponentTags(string $value, string $viewPath): string
     {
-        $lines = explode("\n", $value);
-        $result = [];
+        // Match component tags (including multi-line) and capture their position
+        $pattern = '/<(x-[\w\.\-]+)(\s+[^>]*)?>/is';
 
-        foreach ($lines as $lineNumber => $line) {
-            $actualLineNumber = $lineNumber + 1;
+        $offset = 0;
+        while (preg_match($pattern, $value, $matches, PREG_OFFSET_CAPTURE, $offset)) {
+            $fullTag = $matches[0][0];
+            $tagPosition = $matches[0][1];
+            $componentName = $matches[1][0];
+            $attributes = isset($matches[2]) ? $matches[2][0] : '';
 
-            // Skip lines that contain Blade/PHP directives to avoid breaking them
-            if ($this->containsBladeDirective($line)) {
-                $result[] = $line;
+            // Check if this tag already has the data-source attribute
+            if (strpos($attributes, $this->attributeName) !== false) {
+                $offset = $tagPosition + strlen($fullTag);
                 continue;
             }
 
-            // Match component tags like <x-alert>, <x-card.header>, etc.
-            $pattern = '/<(x-[\w\.\-]+)(\s+[^>]*)?>/i';
-
-            if (preg_match($pattern, $line, $matches)) {
-                $fullTag = $matches[0];
-                $componentName = $matches[1];
-                $attributes = $matches[2] ?? '';
-
-                // Don't add if already has the attribute
-                if (strpos($attributes, $this->attributeName) === false) {
-                    $sourceRef = $this->encodeSourceReference($viewPath, $actualLineNumber);
-
-                    if (trim($attributes)) {
-                        $newTag = "<{$componentName}{$attributes} {$this->attributeName}=\"{$sourceRef}\">";
-                    } else {
-                        $newTag = "<{$componentName} {$this->attributeName}=\"{$sourceRef}\">";
-                    }
-
-                    $line = str_replace($fullTag, $newTag, $line);
-                }
+            // Check if the matched tag contains Blade/PHP code that could break
+            if ($this->containsBladeDirective($fullTag)) {
+                $offset = $tagPosition + strlen($fullTag);
+                continue;
             }
 
-            $result[] = $line;
+            // Calculate line number by counting newlines before this position
+            $lineNumber = substr_count(substr($value, 0, $tagPosition), "\n") + 1;
+            $sourceRef = $this->encodeSourceReference($viewPath, $lineNumber);
+
+            // Insert the data-source attribute right before the closing > or />
+            // Handle self-closing tags
+            if (str_ends_with(rtrim($fullTag), '/>')) {
+                $tagWithoutClosing = rtrim(substr($fullTag, 0, -2));
+                $newTag = $tagWithoutClosing . ' ' . $this->attributeName . '="' . $sourceRef . '" />';
+            } else {
+                $tagWithoutClosing = rtrim($fullTag, '>');
+                $newTag = $tagWithoutClosing . ' ' . $this->attributeName . '="' . $sourceRef . '">';
+            }
+
+            // Replace in the value
+            $value = substr_replace($value, $newTag, $tagPosition, strlen($fullTag));
+
+            // Move offset forward
+            $offset = $tagPosition + strlen($newTag);
         }
 
-        return implode("\n", $result);
+        return $value;
     }
 
     /**
@@ -252,19 +263,39 @@ class BladeInstrumentation
      */
     protected function containsBladeDirective(string $line): bool
     {
-        // Check for common Blade directives and PHP tags
+        // Check for Blade echo syntax and PHP tags
         $patterns = [
             '/\{\{/',           // {{ Blade echo
             '/\{!!/',           // {!! Raw echo
-            '/@\w+/',           // @directive
             '/<\?php/',         // <?php
             '/<\?=/',           // <?=
+            '/=>/',             // PHP array arrow operator
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $line)) {
                 return true;
             }
+        }
+
+        // Check for PHP variables, but NOT inside Alpine.js attributes (which start with @ or x-)
+        // Match $variable only when it appears outside of quoted strings (crude check)
+        if (preg_match('/\$\w+/', $line)) {
+            // If it also has Alpine directives, it's likely Alpine JS, not PHP
+            if (!preg_match('/@\w+="/', $line) && !preg_match('/x-\w+="/', $line)) {
+                return true;
+            }
+        }
+
+        // Check for Blade component attributes like :items="$data"
+        if (preg_match('/:\w+="/', $line)) {
+            return true;
+        }
+
+        // Check for Blade directives, but exclude Alpine.js @ directives (which are in quotes)
+        // Match @directive only when it's NOT inside an attribute value
+        if (preg_match('/@(if|else|elseif|endif|unless|endunless|isset|empty|auth|guest|production|env|hasSection|sectionMissing|yield|show|section|endsection|stop|overwrite|append|prepend|once|endonce|push|endpush|pushOnce|endPushOnce|props|aware|include|includeIf|includeWhen|includeUnless|includeFirst|each|php|endphp|verbatim|endverbatim|extends|stack|json|can|cannot|canany|error|enderror|use|vite|for|foreach|endfor|endforeach|while|endwhile|break|continue|switch|case|default|endswitch|csrf|method|dd|dump)\b/', $line)) {
+            return true;
         }
 
         return false;
