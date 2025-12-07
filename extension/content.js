@@ -29,6 +29,8 @@
   let messageHandler = null;
   let isMinimized = false;
   let isMaximized = false;
+  let historyPanelVisible = false;
+  let currentSourceRef = null;
 
   // Inject CSS animations for the editor
   function injectAnimationStyles() {
@@ -280,6 +282,9 @@
     // Close any existing editor
     await closeEditor();
 
+    // Store the current source reference for history panel
+    currentSourceRef = sourceRef;
+
     // Inject animation styles
     injectAnimationStyles();
 
@@ -415,7 +420,9 @@
       color: #8e8e93;
       letter-spacing: -0.01em;
     `;
-    title.textContent = `${data.view_path}`;
+    // Extract filename from full path (e.g., "welcome.blade.php")
+    const fileName = data.file_path.split('/').pop();
+    title.textContent = fileName;
 
     // Line number badge
     const lineBadge = document.createElement('span');
@@ -465,6 +472,36 @@
       saveButton.style.background = 'rgba(255, 255, 255, 0.08)';
     };
 
+    // History button
+    const historyButton = document.createElement('button');
+    historyButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 4V8L10.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M2.5 8C2.5 4.96243 4.96243 2.5 8 2.5C11.0376 2.5 13.5 4.96243 13.5 8C13.5 11.0376 11.0376 13.5 8 13.5C5.77915 13.5 3.87962 12.1606 3.04102 10.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M2 7L3 10L5.5 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    historyButton.title = 'Version History';
+    historyButton.style.cssText = `
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    `;
+    historyButton.onmouseover = () => {
+      historyButton.style.background = 'rgba(255, 255, 255, 0.14)';
+    };
+    historyButton.onmouseout = () => {
+      if (!historyPanelVisible) {
+        historyButton.style.background = 'rgba(255, 255, 255, 0.08)';
+      }
+    };
+
     // Chevron up button (shown when minimized)
     const expandButton = document.createElement('button');
     expandButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -496,6 +533,7 @@
       }
     };
 
+    headerButtons.appendChild(historyButton);
     headerButtons.appendChild(saveButton);
     headerButtons.appendChild(expandButton);
     header.appendChild(headerLeft);
@@ -538,10 +576,284 @@
     footer.appendChild(footerLeft);
     footer.appendChild(footerRight);
 
+    // Create history panel (initially hidden, slides in from right)
+    const historyPanel = document.createElement('div');
+    historyPanel.style.cssText = `
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 280px;
+      height: 100%;
+      background: #232325;
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    `;
+
+    // History panel header
+    const historyHeader = document.createElement('div');
+    historyHeader.style.cssText = `
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    `;
+
+    const historyTitle = document.createElement('span');
+    historyTitle.style.cssText = `
+      font-size: 12px;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    `;
+    historyTitle.textContent = 'Version History';
+
+    const closeHistoryButton = document.createElement('button');
+    closeHistoryButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10.5 3.5L3.5 10.5M3.5 3.5L10.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>`;
+    closeHistoryButton.style.cssText = `
+      background: none;
+      border: none;
+      color: #636366;
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+    `;
+    closeHistoryButton.onmouseover = () => {
+      closeHistoryButton.style.background = 'rgba(255, 255, 255, 0.08)';
+      closeHistoryButton.style.color = '#ffffff';
+    };
+    closeHistoryButton.onmouseout = () => {
+      closeHistoryButton.style.background = 'none';
+      closeHistoryButton.style.color = '#636366';
+    };
+
+    historyHeader.appendChild(historyTitle);
+    historyHeader.appendChild(closeHistoryButton);
+
+    // History list container (scrollable)
+    const historyList = document.createElement('div');
+    historyList.style.cssText = `
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    `;
+
+    // Loading state for history
+    const historyLoading = document.createElement('div');
+    historyLoading.style.cssText = `
+      padding: 20px;
+      text-align: center;
+      color: #636366;
+      font-size: 12px;
+    `;
+    historyLoading.textContent = 'Loading versions...';
+    historyList.appendChild(historyLoading);
+
+    historyPanel.appendChild(historyHeader);
+    historyPanel.appendChild(historyList);
+
+    // Function to toggle history panel
+    const toggleHistoryPanel = async () => {
+      historyPanelVisible = !historyPanelVisible;
+
+      if (historyPanelVisible) {
+        historyPanel.style.transform = 'translateX(0)';
+        historyButton.style.background = 'rgba(255, 255, 255, 0.14)';
+        // Fetch and display history
+        await loadHistory();
+      } else {
+        historyPanel.style.transform = 'translateX(100%)';
+        historyButton.style.background = 'rgba(255, 255, 255, 0.08)';
+      }
+    };
+
+    // Function to load history from server
+    const loadHistory = async () => {
+      historyList.innerHTML = '';
+      historyList.appendChild(historyLoading);
+      historyLoading.textContent = 'Loading versions...';
+
+      try {
+        const response = await fetch(`/refine/history?ref=${encodeURIComponent(currentSourceRef)}`);
+        const result = await response.json();
+
+        historyList.innerHTML = '';
+
+        if (result.success && result.data.versions) {
+          if (result.data.versions.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.style.cssText = `
+              padding: 20px;
+              text-align: center;
+              color: #636366;
+              font-size: 12px;
+            `;
+            emptyState.textContent = 'No version history available';
+            historyList.appendChild(emptyState);
+            return;
+          }
+
+          result.data.versions.forEach((version, index) => {
+            const versionItem = createVersionItem(version, index === 0);
+            historyList.appendChild(versionItem);
+          });
+        } else {
+          throw new Error(result.error || 'Failed to load history');
+        }
+      } catch (error) {
+        historyList.innerHTML = '';
+        const errorState = document.createElement('div');
+        errorState.style.cssText = `
+          padding: 20px;
+          text-align: center;
+          color: #ff6b6b;
+          font-size: 12px;
+        `;
+        errorState.textContent = 'Failed to load history';
+        historyList.appendChild(errorState);
+      }
+    };
+
+    // Function to create a version item
+    const createVersionItem = (version, isFirst) => {
+      const item = document.createElement('div');
+      item.style.cssText = `
+        padding: 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin-bottom: 4px;
+        ${version.is_current ? 'background: rgba(55, 148, 255, 0.12); border: 1px solid rgba(55, 148, 255, 0.3);' : 'background: rgba(255, 255, 255, 0.04); border: 1px solid transparent;'}
+      `;
+
+      item.onmouseover = () => {
+        if (!version.is_current) {
+          item.style.background = 'rgba(255, 255, 255, 0.08)';
+          item.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+        }
+      };
+      item.onmouseout = () => {
+        if (!version.is_current) {
+          item.style.background = 'rgba(255, 255, 255, 0.04)';
+          item.style.borderColor = 'transparent';
+        }
+      };
+
+      const labelRow = document.createElement('div');
+      labelRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      `;
+
+      const label = document.createElement('span');
+      label.style.cssText = `
+        font-size: 12px;
+        font-weight: 500;
+        color: ${version.is_current ? '#3794ff' : '#ffffff'};
+      `;
+      label.textContent = version.label;
+
+      const size = document.createElement('span');
+      size.style.cssText = `
+        font-size: 10px;
+        color: #636366;
+      `;
+      size.textContent = version.size;
+
+      labelRow.appendChild(label);
+      labelRow.appendChild(size);
+
+      const timeRow = document.createElement('div');
+      timeRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      `;
+
+      const relative = document.createElement('span');
+      relative.style.cssText = `
+        font-size: 11px;
+        color: #8e8e93;
+      `;
+      relative.textContent = version.relative;
+
+      const datetime = document.createElement('span');
+      datetime.style.cssText = `
+        font-size: 10px;
+        color: #48484a;
+      `;
+      datetime.textContent = `${version.date} at ${version.time}`;
+
+      timeRow.appendChild(relative);
+      timeRow.appendChild(datetime);
+
+      item.appendChild(labelRow);
+      item.appendChild(timeRow);
+
+      // Click handler to load this version
+      if (!version.is_current) {
+        item.onclick = async () => {
+          await loadVersion(version.id);
+        };
+      }
+
+      return item;
+    };
+
+    // Function to load a specific version
+    const loadVersion = async (versionId) => {
+      try {
+        const response = await fetch(`/refine/version?version_id=${encodeURIComponent(versionId)}`);
+        const result = await response.json();
+
+        if (result.success && result.data.contents !== undefined) {
+          // Send the content to the Monaco editor
+          iframe.contentWindow.postMessage({
+            type: 'SET_VALUE',
+            payload: { value: result.data.contents }
+          }, '*');
+
+          showNotification('Version loaded - click Save to restore', 'success');
+
+          // Close the history panel
+          toggleHistoryPanel();
+        } else {
+          throw new Error(result.error || 'Failed to load version');
+        }
+      } catch (error) {
+        showNotification('Failed to load version', 'error');
+      }
+    };
+
+    // Wire up history button and close button
+    historyButton.onclick = (e) => {
+      e.stopPropagation();
+      toggleHistoryPanel();
+    };
+
+    closeHistoryButton.onclick = (e) => {
+      e.stopPropagation();
+      toggleHistoryPanel();
+    };
+
     // Assemble the editor
     editor.appendChild(header);
     editor.appendChild(iframe);
     editor.appendChild(footer);
+    editor.appendChild(historyPanel);
 
     // Append to body
     document.body.appendChild(editor);
@@ -576,8 +888,9 @@
       editor.style.right = '0';
       editor.style.borderRadius = '12px 12px 0 0';
 
-      // Hide save button, show expand button
+      // Hide save and history buttons, show expand button
       saveButton.style.display = 'none';
+      historyButton.style.display = 'none';
       expandButton.style.display = 'flex';
 
       // Hide content after animation starts
@@ -596,8 +909,9 @@
       iframe.style.display = '';
       footer.style.display = '';
 
-      // Show save button, hide expand button
+      // Show save and history buttons, hide expand button
       saveButton.style.display = '';
+      historyButton.style.display = 'flex';
       expandButton.style.display = 'none';
 
       // Animate back to original position and height
