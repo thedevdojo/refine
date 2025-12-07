@@ -146,6 +146,23 @@
     // Close any existing editor
     closeEditor();
 
+    // Load Monaco Editor CSS if not already loaded
+    if (!document.getElementById('monaco-editor-css')) {
+      const monacoCSS = document.createElement('link');
+      monacoCSS.id = 'monaco-editor-css';
+      monacoCSS.rel = 'stylesheet';
+      monacoCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/editor/editor.main.min.css';
+      document.head.appendChild(monacoCSS);
+    }
+
+    // Load Monaco Editor loader script if not already loaded
+    if (!document.getElementById('monaco-editor-loader')) {
+      const monacoLoader = document.createElement('script');
+      monacoLoader.id = 'monaco-editor-loader';
+      monacoLoader.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/loader.min.js';
+      document.head.appendChild(monacoLoader);
+    }
+
     // Create the editor overlay
     const overlay = document.createElement('div');
     overlay.id = 'refine-editor-overlay';
@@ -261,22 +278,14 @@
     header.appendChild(title);
     header.appendChild(headerButtons);
 
-    // Create the textarea
-    const textarea = document.createElement('textarea');
-    textarea.id = 'refine-editor-textarea';
-    textarea.value = data.full_contents;
-    textarea.style.cssText = `
+    // Create the Monaco editor container
+    const editorContainer = document.createElement('div');
+    editorContainer.id = 'refine-editor-textarea';
+    editorContainer.style.cssText = `
       flex: 1;
       background: #1e1e1e;
-      color: #d4d4d4;
       border: none;
-      padding: 16px;
-      font-size: 14px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      line-height: 1.6;
-      resize: none;
-      outline: none;
-      tab-size: 4;
+      overflow: hidden;
     `;
 
     // Create the footer with file info
@@ -293,13 +302,78 @@
 
     // Assemble the editor
     editor.appendChild(header);
-    editor.appendChild(textarea);
+    editor.appendChild(editorContainer);
     editor.appendChild(footer);
     overlay.appendChild(editor);
 
+    // Append to body
+    document.body.appendChild(overlay);
+    currentEditor = overlay;
+
+    // Variable to store Monaco editor instance
+    let monacoEditor = null;
+
+    // Initialize Monaco Editor
+    const initMonaco = () => {
+      if (typeof require !== 'undefined' && require.config) {
+        require.config({
+          paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs' }
+        });
+
+        require(['vs/editor/editor.main'], () => {
+          monacoEditor = monaco.editor.create(editorContainer, {
+            value: data.full_contents,
+            language: 'blade',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            fontSize: 14,
+            lineHeight: 22,
+            minimap: {
+              enabled: true
+            },
+            scrollBeyondLastLine: false,
+            folding: true,
+            lineNumbers: 'on',
+            renderWhitespace: 'selection'
+          });
+
+          // Scroll to the target line
+          monacoEditor.revealLineInCenter(data.line_number);
+          monacoEditor.setPosition({ lineNumber: data.line_number, column: 1 });
+          monacoEditor.focus();
+
+          // Add keyboard shortcuts
+          monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, () => {
+            saveButton.click();
+          });
+
+          monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+            saveButton.click();
+          });
+
+          monacoEditor.addCommand(monaco.KeyCode.Escape, () => {
+            closeEditor();
+          });
+        });
+      }
+    };
+
+    // Wait for Monaco loader to be ready
+    const checkMonacoReady = setInterval(() => {
+      if (typeof require !== 'undefined') {
+        clearInterval(checkMonacoReady);
+        initMonaco();
+      }
+    }, 100);
+
     // Event handlers
     saveButton.onclick = () => {
-      const newContents = textarea.value;
+      if (!monacoEditor) {
+        showNotification('Editor not ready yet', 'error');
+        return;
+      }
+
+      const newContents = monacoEditor.getValue();
       saveButton.disabled = true;
       saveButton.textContent = 'Saving...';
       saveButton.style.background = '#5a5a5a';
@@ -325,7 +399,12 @@
     };
 
     saveCloseButton.onclick = () => {
-      const newContents = textarea.value;
+      if (!monacoEditor) {
+        showNotification('Editor not ready yet', 'error');
+        return;
+      }
+
+      const newContents = monacoEditor.getValue();
       saveCloseButton.disabled = true;
       saveCloseButton.textContent = 'Saving...';
       saveCloseButton.style.background = '#5a5a5a';
@@ -356,68 +435,6 @@
         closeEditor();
       }
     };
-
-    // Keyboard shortcuts
-    textarea.onkeydown = (e) => {
-      // Cmd/Ctrl + S to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        saveButton.click();
-      }
-
-      // Cmd/Ctrl + Enter to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        saveButton.click();
-      }
-
-      // Escape to cancel
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeEditor();
-      }
-
-      // Handle tab key for indentation
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const value = textarea.value;
-
-        textarea.value = value.substring(0, start) + '    ' + value.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + 4;
-      }
-    };
-
-    // Append to body
-    document.body.appendChild(overlay);
-    currentEditor = overlay;
-
-    // Focus the textarea and scroll to the target line
-    textarea.focus();
-    scrollToLine(textarea, data.line_number);
-  }
-
-  /**
-   * Scroll the textarea to a specific line number
-   */
-  function scrollToLine(textarea, lineNumber) {
-    const lines = textarea.value.split('\n');
-    const targetLine = Math.max(0, lineNumber - 1);
-
-    // Calculate the character position of the target line
-    let charPosition = 0;
-    for (let i = 0; i < targetLine && i < lines.length; i++) {
-      charPosition += lines[i].length + 1; // +1 for newline
-    }
-
-    // Set cursor to the beginning of the target line
-    textarea.setSelectionRange(charPosition, charPosition);
-
-    // Scroll to make the line visible (approximate)
-    const lineHeight = parseInt(getComputedStyle(textarea).lineHeight);
-    const scrollPosition = (targetLine - 5) * lineHeight; // Center the line
-    textarea.scrollTop = Math.max(0, scrollPosition);
   }
 
   /**
