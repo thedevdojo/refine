@@ -59,15 +59,12 @@ function initEditor(config) {
       type: 'EDITOR_READY'
     }, '*');
 
-    // Set up keyboard shortcuts
+    // Set up keyboard shortcuts - CMD+S / CTRL+S to save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       window.parent.postMessage({ type: 'SAVE' }, '*');
     });
 
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      window.parent.postMessage({ type: 'SAVE' }, '*');
-    });
-
+    // Escape to close
     editor.addCommand(monaco.KeyCode.Escape, () => {
       window.parent.postMessage({ type: 'CANCEL' }, '*');
     });

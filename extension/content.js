@@ -18,6 +18,7 @@
     sourceAttribute: 'data-source',
     maxTraversalDepth: 20,
     saveDebounceMs: 300,
+    storageKey: 'refine_editing_file',
   };
 
   // State
@@ -30,7 +31,13 @@
   // Load GSAP
   function loadGSAP() {
     return new Promise((resolve) => {
-      if (gsapLoaded || typeof gsap !== 'undefined') {
+      if (gsapLoaded && typeof window.gsap !== 'undefined') {
+        resolve();
+        return;
+      }
+
+      // Check if already loaded
+      if (typeof window.gsap !== 'undefined') {
         gsapLoaded = true;
         resolve();
         return;
@@ -40,7 +47,8 @@
       script.src = chrome.runtime.getURL('gsap.min.js');
       script.onload = () => {
         gsapLoaded = true;
-        resolve();
+        // Small delay to ensure GSAP is fully initialized
+        setTimeout(resolve, 50);
       };
       script.onerror = () => {
         console.warn('GSAP failed to load, animations will be disabled');
@@ -48,6 +56,59 @@
       };
       document.head.appendChild(script);
     });
+  }
+
+  /**
+   * Save the current editing state to localStorage
+   */
+  function saveEditingState(sourceRef) {
+    try {
+      localStorage.setItem(CONFIG.storageKey, JSON.stringify({
+        sourceRef: sourceRef,
+        timestamp: Date.now(),
+        url: window.location.pathname
+      }));
+    } catch (e) {
+      console.warn('Failed to save editing state:', e);
+    }
+  }
+
+  /**
+   * Get and clear the saved editing state
+   */
+  function getAndClearEditingState() {
+    try {
+      const data = localStorage.getItem(CONFIG.storageKey);
+      if (!data) return null;
+
+      localStorage.removeItem(CONFIG.storageKey);
+      const state = JSON.parse(data);
+
+      // Only restore if it's recent (within 10 seconds) and same page
+      const isRecent = (Date.now() - state.timestamp) < 10000;
+      const samePage = state.url === window.location.pathname;
+
+      if (isRecent && samePage) {
+        return state.sourceRef;
+      }
+      return null;
+    } catch (e) {
+      console.warn('Failed to get editing state:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Check for saved editing state and restore editor on page load
+   */
+  function checkAndRestoreEditor() {
+    const sourceRef = getAndClearEditingState();
+    if (sourceRef) {
+      // Delay slightly to let page render
+      setTimeout(() => {
+        openEditorWithSourceRef(sourceRef);
+      }, 300);
+    }
   }
 
   /**
@@ -77,11 +138,17 @@
     }
 
     const sourceRef = sourceElement.getAttribute(CONFIG.sourceAttribute);
+    openEditorWithSourceRef(sourceRef);
+  }
 
+  /**
+   * Open editor with a specific source reference (used for restoring state)
+   */
+  function openEditorWithSourceRef(sourceRef) {
     // Fetch the source code from Laravel
     fetchSource(sourceRef)
       .then(data => {
-        renderEditor(clickedElement, sourceRef, data);
+        renderEditor(sourceRef, data);
       })
       .catch(error => {
         showNotification('Failed to load source: ' + error.message, 'error');
@@ -167,7 +234,7 @@
   /**
    * Render the floating editor UI
    */
-  async function renderEditor(targetElement, sourceRef, data) {
+  async function renderEditor(sourceRef, data) {
     // Close any existing editor
     await closeEditor();
 
@@ -276,7 +343,7 @@
     headerLeft.appendChild(trafficLights);
     headerLeft.appendChild(title);
 
-    // Right side of header (action buttons)
+    // Right side of header (save button)
     const headerButtons = document.createElement('div');
     headerButtons.style.cssText = `
       display: flex;
@@ -300,25 +367,7 @@
     saveButton.onmouseover = () => saveButton.style.background = 'rgba(255, 255, 255, 0.1)';
     saveButton.onmouseout = () => saveButton.style.background = 'transparent';
 
-    // Save & Close button
-    const saveCloseButton = document.createElement('button');
-    saveCloseButton.textContent = 'Save & Close';
-    saveCloseButton.style.cssText = `
-      background: transparent;
-      color: #ffffff;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background 0.15s ease;
-    `;
-    saveCloseButton.onmouseover = () => saveCloseButton.style.background = 'rgba(255, 255, 255, 0.1)';
-    saveCloseButton.onmouseout = () => saveCloseButton.style.background = 'transparent';
-
     headerButtons.appendChild(saveButton);
-    headerButtons.appendChild(saveCloseButton);
     header.appendChild(headerLeft);
     header.appendChild(headerButtons);
 
@@ -354,12 +403,11 @@
     currentEditor = editor;
 
     // Animate in with GSAP
-    if (typeof gsap !== 'undefined') {
-      gsap.to(editor, {
-        y: 0,
-        duration: 0.4,
-        ease: 'power3.out'
-      });
+    if (typeof window.gsap !== 'undefined') {
+      window.gsap.fromTo(editor,
+        { y: '100%' },
+        { y: '0%', duration: 0.4, ease: 'power3.out' }
+      );
     } else {
       editor.style.transform = 'translateY(0)';
     }
@@ -448,6 +496,9 @@
           saveButton.textContent = 'Save';
           saveButton.style.opacity = '1';
 
+          // Save the editing state so we can restore after reload
+          saveEditingState(sourceRef);
+
           // Force hard reload to bypass cache
           setTimeout(() => {
             hardReload();
@@ -458,32 +509,6 @@
           saveButton.disabled = false;
           saveButton.textContent = 'Save';
           saveButton.style.opacity = '1';
-        });
-    };
-
-    saveCloseButton.onclick = async () => {
-      const newContents = await getEditorValue();
-      if (!newContents) return;
-
-      saveCloseButton.disabled = true;
-      saveCloseButton.textContent = 'Saving...';
-      saveCloseButton.style.opacity = '0.6';
-
-      saveSource(sourceRef, newContents)
-        .then(() => {
-          showNotification('Saved successfully!', 'success');
-          closeEditor();
-
-          // Force hard reload to bypass cache
-          setTimeout(() => {
-            hardReload();
-          }, 500);
-        })
-        .catch(error => {
-          showNotification('Save failed: ' + error.message, 'error');
-          saveCloseButton.disabled = false;
-          saveCloseButton.textContent = 'Save & Close';
-          saveCloseButton.style.opacity = '1';
         });
     };
   }
@@ -510,8 +535,8 @@
       }
 
       // Animate out with GSAP
-      if (typeof gsap !== 'undefined') {
-        gsap.to(currentEditor, {
+      if (typeof window.gsap !== 'undefined') {
+        window.gsap.to(currentEditor, {
           y: '100%',
           duration: 0.3,
           ease: 'power2.in',
@@ -629,4 +654,7 @@
 
   // Log that Refine is active
   console.log('Refine: Content script loaded and ready');
+
+  // Check for saved editing state and restore editor if needed
+  checkAndRestoreEditor();
 })();
