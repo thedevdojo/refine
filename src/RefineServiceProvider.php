@@ -19,6 +19,9 @@ class RefineServiceProvider extends ServiceProvider
         $this->app->singleton(BladeInstrumentation::class, function ($app) {
             return new BladeInstrumentation();
         });
+
+        // Exclude Refine routes from CSRF verification
+        $this->excludeFromCsrf();
     }
 
     /**
@@ -36,9 +39,6 @@ class RefineServiceProvider extends ServiceProvider
             __DIR__ . '/../config/refine.php' => config_path('refine.php'),
         ], 'refine-config');
 
-        // Exclude Refine routes from CSRF verification
-        $this->excludeFromCsrf();
-
         // Load routes
         $this->loadRoutes();
 
@@ -48,11 +48,18 @@ class RefineServiceProvider extends ServiceProvider
 
     /**
      * Exclude Refine routes from CSRF verification.
+     *
+     * Note: In Laravel 11+, users need to manually add CSRF exclusion
+     * in their bootstrap/app.php file:
+     *
+     * $middleware->validateCsrfTokens(except: ['refine/*']);
+     *
+     * This is documented in the installation guide.
      */
     protected function excludeFromCsrf(): void
     {
-        // We'll handle CSRF exclusion through middleware configuration in katanaui's bootstrap/app.php
-        // For now, let's document this requirement
+        // No automatic CSRF exclusion - users must configure manually
+        // This is intentional for Laravel 11+ to make the setup explicit
     }
 
     /**
