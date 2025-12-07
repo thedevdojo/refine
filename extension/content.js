@@ -37,28 +37,32 @@
     style.textContent = `
       @keyframes refine-slide-up {
         from {
-          transform: translateY(100%);
+          transform: translateY(calc(100% + 20px));
+          opacity: 0;
         }
         to {
-          transform: translateY(0%);
+          transform: translateY(0);
+          opacity: 1;
         }
       }
 
       @keyframes refine-slide-down {
         from {
-          transform: translateY(0%);
+          transform: translateY(0);
+          opacity: 1;
         }
         to {
-          transform: translateY(100%);
+          transform: translateY(calc(100% + 20px));
+          opacity: 0;
         }
       }
 
       .refine-editor-enter {
-        animation: refine-slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: refine-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
 
       .refine-editor-exit {
-        animation: refine-slide-down 0.35s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+        animation: refine-slide-down 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
       }
     `;
     document.head.appendChild(style);
@@ -277,35 +281,39 @@
     // Inject animation styles
     injectAnimationStyles();
 
-    // Create the editor container (positioned at bottom)
+    // Create the editor container (positioned at bottom with padding)
     const editor = document.createElement('div');
     editor.id = 'refine-editor';
     editor.style.cssText = `
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 55vh;
-      background: #1e1e1e;
+      bottom: 7px;
+      left: 7px;
+      right: 7px;
+      height: calc(55vh - 10px);
+      background: #1a1a1c;
       z-index: 999999;
       display: flex;
       flex-direction: column;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.3);
-      transform: translateY(100%);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), 0 2px 12px rgba(0, 0, 0, 0.3);
+      border-radius: 7px;
+      transform: translateY(calc(100% + 20px));
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     `;
 
     // Create the header
     const header = document.createElement('div');
     header.style.cssText = `
-      background: #38383a;
+      background: #2a2a2c;
       color: #ffffff;
-      padding: 10px 16px;
+      padding: 7px;
+      padding-left:15px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid #505052;
       min-height: 20px;
+      flex-shrink: 0;
     `;
 
     // Left side of header (traffic lights + title)
@@ -313,7 +321,7 @@
     headerLeft.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
     `;
 
     // Traffic light buttons
@@ -334,10 +342,17 @@
       border: none;
       cursor: pointer;
       padding: 0;
-      transition: opacity 0.15s ease;
+      transition: all 0.15s ease;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
     `;
-    redButton.onmouseover = () => redButton.style.opacity = '0.8';
-    redButton.onmouseout = () => redButton.style.opacity = '1';
+    redButton.onmouseover = () => {
+      redButton.style.background = '#ff4136';
+      redButton.style.transform = 'scale(1.1)';
+    };
+    redButton.onmouseout = () => {
+      redButton.style.background = '#ff5f57';
+      redButton.style.transform = 'scale(1)';
+    };
 
     // Yellow button (decorative)
     const yellowButton = document.createElement('button');
@@ -349,6 +364,7 @@
       border: none;
       cursor: default;
       padding: 0;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
     `;
 
     // Green button (decorative)
@@ -361,6 +377,7 @@
       border: none;
       cursor: default;
       padding: 0;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
     `;
 
     trafficLights.appendChild(redButton);
@@ -370,11 +387,27 @@
     // Title
     const title = document.createElement('div');
     title.style.cssText = `
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
-      color: #a0a0a2;
+      color: #8e8e93;
+      letter-spacing: -0.01em;
     `;
-    title.textContent = `Editing: ${data.view_path} (Line ${data.line_number})`;
+    title.textContent = `${data.view_path}`;
+
+    // Line number badge
+    const lineBadge = document.createElement('span');
+    lineBadge.style.cssText = `
+      font-size: 10px;
+      font-weight: 600;
+      color: #636366;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      letter-spacing: 0.02em;
+    `;
+    lineBadge.textContent = `Line ${data.line_number}`;
+    title.appendChild(lineBadge);
 
     headerLeft.appendChild(trafficLights);
     headerLeft.appendChild(title);
@@ -383,25 +416,31 @@
     const headerButtons = document.createElement('div');
     headerButtons.style.cssText = `
       display: flex;
-      gap: 10px;
+      align-items: center;
+      gap: 8px;
     `;
 
     // Save button
     const saveButton = document.createElement('button');
     saveButton.textContent = 'Save';
     saveButton.style.cssText = `
-      background: transparent;
+      background: rgba(255, 255, 255, 0.08);
       color: #ffffff;
       border: none;
-      padding: 6px 16px;
+      padding: 5px 14px;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
-      transition: background 0.15s ease;
+      transition: all 0.15s ease;
+      letter-spacing: -0.01em;
     `;
-    saveButton.onmouseover = () => saveButton.style.background = 'rgba(255, 255, 255, 0.1)';
-    saveButton.onmouseout = () => saveButton.style.background = 'transparent';
+    saveButton.onmouseover = () => {
+      saveButton.style.background = 'rgba(255, 255, 255, 0.14)';
+    };
+    saveButton.onmouseout = () => {
+      saveButton.style.background = 'rgba(255, 255, 255, 0.08)';
+    };
 
     headerButtons.appendChild(saveButton);
     header.appendChild(headerLeft);
@@ -413,7 +452,7 @@
     iframe.src = chrome.runtime.getURL('monaco-editor.html');
     iframe.style.cssText = `
       flex: 1;
-      background: #1e1e1e;
+      background: #1a1a1c;
       border: none;
       overflow: hidden;
     `;
@@ -421,13 +460,28 @@
     // Create the footer with file info
     const footer = document.createElement('div');
     footer.style.cssText = `
-      background: #38383a;
-      color: #6e6e70;
+      background: #2a2a2c;
+      color: #636366;
       padding: 8px 16px;
-      font-size: 12px;
-      border-top: 1px solid #505052;
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      letter-spacing: -0.01em;
     `;
-    footer.textContent = `${data.file_path} • ${data.total_lines} lines`;
+
+    const footerLeft = document.createElement('span');
+    footerLeft.textContent = data.file_path;
+
+    const footerRight = document.createElement('span');
+    footerRight.style.cssText = `
+      color: #48484a;
+    `;
+    footerRight.textContent = `${data.total_lines} lines`;
+
+    footer.appendChild(footerLeft);
+    footer.appendChild(footerRight);
 
     // Assemble the editor
     editor.appendChild(header);
@@ -487,7 +541,7 @@
         type: 'INIT_EDITOR',
         payload: {
           value: data.full_contents,
-          language: 'blade',
+          language: 'html',
           theme: 'vs-dark',
           fontSize: 14,
           lineHeight: 24,
