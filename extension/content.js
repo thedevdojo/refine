@@ -402,15 +402,19 @@
     document.body.appendChild(editor);
     currentEditor = editor;
 
-    // Animate in with GSAP
-    if (typeof window.gsap !== 'undefined') {
-      window.gsap.fromTo(editor,
-        { y: '100%' },
-        { y: '0%', duration: 0.4, ease: 'power3.out' }
-      );
-    } else {
-      editor.style.transform = 'translateY(0)';
-    }
+    // Animate in with GSAP - use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (typeof window.gsap !== 'undefined') {
+          window.gsap.fromTo(editor,
+            { y: '100%' },
+            { y: '0%', duration: 0.5, ease: 'power3.out' }
+          );
+        } else {
+          editor.style.transform = 'translateY(0)';
+        }
+      });
+    });
 
     // Track editor ready state
     let editorReady = false;
@@ -523,9 +527,11 @@
         return;
       }
 
+      const editorToClose = currentEditor;
+
       // Remove escape key handler
-      if (currentEditor.escapeHandler) {
-        document.removeEventListener('keydown', currentEditor.escapeHandler);
+      if (editorToClose.escapeHandler) {
+        document.removeEventListener('keydown', editorToClose.escapeHandler);
       }
 
       // Remove message handler
@@ -534,23 +540,22 @@
         messageHandler = null;
       }
 
+      // Clear current editor reference immediately to prevent double-close
+      currentEditor = null;
+
       // Animate out with GSAP
       if (typeof window.gsap !== 'undefined') {
-        window.gsap.to(currentEditor, {
+        window.gsap.to(editorToClose, {
           y: '100%',
-          duration: 0.3,
+          duration: 0.35,
           ease: 'power2.in',
           onComplete: () => {
-            if (currentEditor) {
-              currentEditor.remove();
-              currentEditor = null;
-            }
+            editorToClose.remove();
             resolve();
           }
         });
       } else {
-        currentEditor.remove();
-        currentEditor = null;
+        editorToClose.remove();
         resolve();
       }
     });

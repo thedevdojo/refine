@@ -60,9 +60,26 @@ function initEditor(config) {
     }, '*');
 
     // Set up keyboard shortcuts - CMD+S / CTRL+S to save
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      window.parent.postMessage({ type: 'SAVE' }, '*');
+    // Use addAction to properly prevent default browser behavior
+    editor.addAction({
+      id: 'refine-save',
+      label: 'Save File',
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS
+      ],
+      run: () => {
+        window.parent.postMessage({ type: 'SAVE' }, '*');
+      }
     });
+
+    // Also add a document-level listener to catch CMD+S before it reaches the browser
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        e.stopPropagation();
+        window.parent.postMessage({ type: 'SAVE' }, '*');
+      }
+    }, true);
 
     // Escape to close
     editor.addCommand(monaco.KeyCode.Escape, () => {
