@@ -6,3 +6,6 @@ composer.lock
 *~
 .idea/
 .vscode/
+.phpunit.cache/
+coverage/
+.phpunit.result.cache
