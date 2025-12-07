@@ -206,7 +206,7 @@
 
     // Save button
     const saveButton = document.createElement('button');
-    saveButton.textContent = 'Save';
+    saveButton.innerHTML = 'Save <span style="opacity: 0.7; font-size: 11px;">⏎</span>';
     saveButton.style.cssText = `
       background: #3794ff;
       color: white;
@@ -216,6 +216,9 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     `;
     saveButton.onmouseover = () => saveButton.style.background = '#2080ff';
     saveButton.onmouseout = () => saveButton.style.background = '#3794ff';
@@ -308,9 +311,9 @@
           saveButton.textContent = 'Save';
           saveButton.style.background = '#3794ff';
 
-          // Reload the page to show changes
+          // Force hard reload to bypass cache
           setTimeout(() => {
-            window.location.reload();
+            hardReload();
           }, 500);
         })
         .catch(error => {
@@ -332,9 +335,9 @@
           showNotification('Saved successfully!', 'success');
           closeEditor();
 
-          // Reload the page to show changes
+          // Force hard reload to bypass cache
           setTimeout(() => {
-            window.location.reload();
+            hardReload();
           }, 500);
         })
         .catch(error => {
@@ -358,6 +361,12 @@
     textarea.onkeydown = (e) => {
       // Cmd/Ctrl + S to save
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveButton.click();
+      }
+
+      // Cmd/Ctrl + Enter to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         saveButton.click();
       }
@@ -419,6 +428,32 @@
       currentEditor.remove();
       currentEditor = null;
     }
+  }
+
+  /**
+   * Force a hard reload that bypasses browser cache
+   */
+  function hardReload() {
+    // Clear browser cache for this page using multiple methods
+
+    // Method 1: Delete service worker cache if present
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
+
+    // Method 2: Add cache-busting parameter and force reload
+    const url = new URL(window.location.href);
+
+    // Remove any existing refine reload parameter
+    url.searchParams.delete('_refine_reload');
+
+    // Add new timestamp
+    url.searchParams.set('_refine_reload', Date.now());
+
+    // Method 3: Use location.replace to bypass history
+    window.location.replace(url.toString());
   }
 
   /**
