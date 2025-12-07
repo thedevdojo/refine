@@ -37,7 +37,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["monaco-editor.html", "monaco-init.js", "monaco/**/*"],
+      "resources": ["monaco-editor.html", "monaco-init.js", "monaco/**/*", "gsap.min.js"],
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*",

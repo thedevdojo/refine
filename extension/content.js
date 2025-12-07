@@ -24,6 +24,31 @@
   let clickedElement = null;
   let currentEditor = null;
   let saveTimeout = null;
+  let gsapLoaded = false;
+  let messageHandler = null;
+
+  // Load GSAP
+  function loadGSAP() {
+    return new Promise((resolve) => {
+      if (gsapLoaded || typeof gsap !== 'undefined') {
+        gsapLoaded = true;
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('gsap.min.js');
+      script.onload = () => {
+        gsapLoaded = true;
+        resolve();
+      };
+      script.onerror = () => {
+        console.warn('GSAP failed to load, animations will be disabled');
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
+  }
 
   /**
    * Listen for messages from the background script
@@ -142,123 +167,159 @@
   /**
    * Render the floating editor UI
    */
-  function renderEditor(targetElement, sourceRef, data) {
+  async function renderEditor(targetElement, sourceRef, data) {
     // Close any existing editor
-    closeEditor();
+    await closeEditor();
 
-    // Create the editor overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'refine-editor-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 999999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
+    // Load GSAP for animations
+    await loadGSAP();
 
-    // Create the editor container
+    // Create the editor container (positioned at bottom)
     const editor = document.createElement('div');
     editor.id = 'refine-editor';
     editor.style.cssText = `
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 55vh;
       background: #1e1e1e;
-      border: 2px solid #3794ff;
-      border-radius: 8px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-      width: 90%;
-      max-width: 1200px;
-      height: 80%;
+      z-index: 999999;
       display: flex;
       flex-direction: column;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.3);
+      transform: translateY(100%);
     `;
 
     // Create the header
     const header = document.createElement('div');
     header.style.cssText = `
-      background: #2d2d2d;
-      color: #cccccc;
-      padding: 12px 16px;
-      border-bottom: 1px solid #3794ff;
+      background: #38383a;
+      color: #ffffff;
+      padding: 10px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-radius: 6px 6px 0 0;
+      border-bottom: 1px solid #505052;
+      min-height: 20px;
     `;
 
+    // Left side of header (traffic lights + title)
+    const headerLeft = document.createElement('div');
+    headerLeft.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    `;
+
+    // Traffic light buttons
+    const trafficLights = document.createElement('div');
+    trafficLights.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+
+    // Red button (close)
+    const redButton = document.createElement('button');
+    redButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff5f57;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      transition: opacity 0.15s ease;
+    `;
+    redButton.onmouseover = () => redButton.style.opacity = '0.8';
+    redButton.onmouseout = () => redButton.style.opacity = '1';
+
+    // Yellow button (decorative)
+    const yellowButton = document.createElement('button');
+    yellowButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #febc2e;
+      border: none;
+      cursor: default;
+      padding: 0;
+    `;
+
+    // Green button (decorative)
+    const greenButton = document.createElement('button');
+    greenButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #28c840;
+      border: none;
+      cursor: default;
+      padding: 0;
+    `;
+
+    trafficLights.appendChild(redButton);
+    trafficLights.appendChild(yellowButton);
+    trafficLights.appendChild(greenButton);
+
+    // Title
     const title = document.createElement('div');
     title.style.cssText = `
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 500;
+      color: #a0a0a2;
     `;
     title.textContent = `Editing: ${data.view_path} (Line ${data.line_number})`;
 
+    headerLeft.appendChild(trafficLights);
+    headerLeft.appendChild(title);
+
+    // Right side of header (action buttons)
     const headerButtons = document.createElement('div');
     headerButtons.style.cssText = `
       display: flex;
-      gap: 8px;
+      gap: 10px;
     `;
 
     // Save button
     const saveButton = document.createElement('button');
-    saveButton.innerHTML = 'Save <span style="opacity: 0.7; font-size: 11px;">⏎</span>';
+    saveButton.textContent = 'Save';
     saveButton.style.cssText = `
-      background: #3794ff;
-      color: white;
+      background: transparent;
+      color: #ffffff;
       border: none;
       padding: 6px 16px;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      transition: background 0.15s ease;
     `;
-    saveButton.onmouseover = () => saveButton.style.background = '#2080ff';
-    saveButton.onmouseout = () => saveButton.style.background = '#3794ff';
+    saveButton.onmouseover = () => saveButton.style.background = 'rgba(255, 255, 255, 0.1)';
+    saveButton.onmouseout = () => saveButton.style.background = 'transparent';
 
     // Save & Close button
     const saveCloseButton = document.createElement('button');
     saveCloseButton.textContent = 'Save & Close';
     saveCloseButton.style.cssText = `
-      background: #28a745;
-      color: white;
+      background: transparent;
+      color: #ffffff;
       border: none;
       padding: 6px 16px;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
+      transition: background 0.15s ease;
     `;
-    saveCloseButton.onmouseover = () => saveCloseButton.style.background = '#218838';
-    saveCloseButton.onmouseout = () => saveCloseButton.style.background = '#28a745';
-
-    // Cancel button
-    const cancelButton = document.createElement('button');
-    cancelButton.textContent = 'Cancel';
-    cancelButton.style.cssText = `
-      background: #5a5a5a;
-      color: white;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-    `;
-    cancelButton.onmouseover = () => cancelButton.style.background = '#6a6a6a';
-    cancelButton.onmouseout = () => cancelButton.style.background = '#5a5a5a';
+    saveCloseButton.onmouseover = () => saveCloseButton.style.background = 'rgba(255, 255, 255, 0.1)';
+    saveCloseButton.onmouseout = () => saveCloseButton.style.background = 'transparent';
 
     headerButtons.appendChild(saveButton);
     headerButtons.appendChild(saveCloseButton);
-    headerButtons.appendChild(cancelButton);
-    header.appendChild(title);
+    header.appendChild(headerLeft);
     header.appendChild(headerButtons);
 
     // Create iframe for Monaco editor
@@ -275,12 +336,11 @@
     // Create the footer with file info
     const footer = document.createElement('div');
     footer.style.cssText = `
-      background: #2d2d2d;
-      color: #888;
+      background: #38383a;
+      color: #6e6e70;
       padding: 8px 16px;
-      border-top: 1px solid #3a3a3a;
       font-size: 12px;
-      border-radius: 0 0 6px 6px;
+      border-top: 1px solid #505052;
     `;
     footer.textContent = `${data.file_path} • ${data.total_lines} lines`;
 
@@ -288,17 +348,27 @@
     editor.appendChild(header);
     editor.appendChild(iframe);
     editor.appendChild(footer);
-    overlay.appendChild(editor);
 
     // Append to body
-    document.body.appendChild(overlay);
-    currentEditor = overlay;
+    document.body.appendChild(editor);
+    currentEditor = editor;
+
+    // Animate in with GSAP
+    if (typeof gsap !== 'undefined') {
+      gsap.to(editor, {
+        y: 0,
+        duration: 0.4,
+        ease: 'power3.out'
+      });
+    } else {
+      editor.style.transform = 'translateY(0)';
+    }
 
     // Track editor ready state
     let editorReady = false;
 
     // Set up message listener for iframe communication
-    const messageHandler = (event) => {
+    messageHandler = (event) => {
       if (event.source !== iframe.contentWindow) return;
 
       const { type, payload } = event.data;
@@ -320,6 +390,16 @@
 
     window.addEventListener('message', messageHandler);
 
+    // Escape key handler
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeEditor();
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+    editor.escapeHandler = escapeHandler;
+
     // Initialize Monaco editor in iframe once it's loaded
     iframe.onload = () => {
       iframe.contentWindow.postMessage({
@@ -329,7 +409,7 @@
           language: 'blade',
           theme: 'vs-dark',
           fontSize: 14,
-          lineHeight: 22,
+          lineHeight: 24,
           minimap: true,
           lineNumber: data.line_number
         }
@@ -351,20 +431,22 @@
     };
 
     // Event handlers
+    redButton.onclick = () => closeEditor();
+
     saveButton.onclick = async () => {
       const newContents = await getEditorValue();
       if (!newContents) return;
 
       saveButton.disabled = true;
       saveButton.textContent = 'Saving...';
-      saveButton.style.background = '#5a5a5a';
+      saveButton.style.opacity = '0.6';
 
       saveSource(sourceRef, newContents)
         .then(() => {
           showNotification('Saved successfully!', 'success');
           saveButton.disabled = false;
           saveButton.textContent = 'Save';
-          saveButton.style.background = '#3794ff';
+          saveButton.style.opacity = '1';
 
           // Force hard reload to bypass cache
           setTimeout(() => {
@@ -375,7 +457,7 @@
           showNotification('Save failed: ' + error.message, 'error');
           saveButton.disabled = false;
           saveButton.textContent = 'Save';
-          saveButton.style.background = '#3794ff';
+          saveButton.style.opacity = '1';
         });
     };
 
@@ -385,7 +467,7 @@
 
       saveCloseButton.disabled = true;
       saveCloseButton.textContent = 'Saving...';
-      saveCloseButton.style.background = '#5a5a5a';
+      saveCloseButton.style.opacity = '0.6';
 
       saveSource(sourceRef, newContents)
         .then(() => {
@@ -401,32 +483,52 @@
           showNotification('Save failed: ' + error.message, 'error');
           saveCloseButton.disabled = false;
           saveCloseButton.textContent = 'Save & Close';
-          saveCloseButton.style.background = '#28a745';
+          saveCloseButton.style.opacity = '1';
         });
-    };
-
-    cancelButton.onclick = () => {
-      window.removeEventListener('message', messageHandler);
-      closeEditor();
-    };
-
-    // Close on overlay click
-    overlay.onclick = (e) => {
-      if (e.target === overlay) {
-        window.removeEventListener('message', messageHandler);
-        closeEditor();
-      }
     };
   }
 
   /**
-   * Close the current editor
+   * Close the current editor with animation
    */
   function closeEditor() {
-    if (currentEditor) {
-      currentEditor.remove();
-      currentEditor = null;
-    }
+    return new Promise((resolve) => {
+      if (!currentEditor) {
+        resolve();
+        return;
+      }
+
+      // Remove escape key handler
+      if (currentEditor.escapeHandler) {
+        document.removeEventListener('keydown', currentEditor.escapeHandler);
+      }
+
+      // Remove message handler
+      if (messageHandler) {
+        window.removeEventListener('message', messageHandler);
+        messageHandler = null;
+      }
+
+      // Animate out with GSAP
+      if (typeof gsap !== 'undefined') {
+        gsap.to(currentEditor, {
+          y: '100%',
+          duration: 0.3,
+          ease: 'power2.in',
+          onComplete: () => {
+            if (currentEditor) {
+              currentEditor.remove();
+              currentEditor = null;
+            }
+            resolve();
+          }
+        });
+      } else {
+        currentEditor.remove();
+        currentEditor = null;
+        resolve();
+      }
+    });
   }
 
   /**
