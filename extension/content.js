@@ -18,12 +18,156 @@
     sourceAttribute: 'data-source',
     maxTraversalDepth: 20,
     saveDebounceMs: 300,
+    storageKey: 'refine_editing_file',
   };
 
   // State
   let clickedElement = null;
   let currentEditor = null;
   let saveTimeout = null;
+  let gsapLoaded = false;
+  let messageHandler = null;
+  let isMinimized = false;
+  let isMaximized = false;
+
+  // Inject CSS animations for the editor
+  function injectAnimationStyles() {
+    if (document.getElementById('refine-animation-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'refine-animation-styles';
+    style.textContent = `
+      @keyframes refine-slide-up {
+        from {
+          transform: translateY(calc(100% + 20px));
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes refine-slide-down {
+        from {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateY(calc(100% + 20px));
+          opacity: 0;
+        }
+      }
+
+      .refine-editor-enter {
+        animation: refine-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .refine-editor-exit {
+        animation: refine-slide-down 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+      }
+
+      .refine-editor-minimized {
+        height: auto !important;
+      }
+
+      .refine-editor-minimized .refine-iframe,
+      .refine-editor-minimized .refine-footer {
+        display: none !important;
+      }
+
+      .refine-editor-maximized {
+        height: calc(100vh - 6px) !important;
+        bottom: 3px !important;
+        left: 3px !important;
+        right: 3px !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Load GSAP (optional enhancement)
+  function loadGSAP() {
+    return new Promise((resolve) => {
+      if (gsapLoaded && typeof window.gsap !== 'undefined') {
+        resolve();
+        return;
+      }
+
+      // Check if already loaded
+      if (typeof window.gsap !== 'undefined') {
+        gsapLoaded = true;
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('gsap.min.js');
+      script.onload = () => {
+        gsapLoaded = true;
+        // Small delay to ensure GSAP is fully initialized
+        setTimeout(resolve, 50);
+      };
+      script.onerror = () => {
+        console.warn('GSAP failed to load, using CSS animations');
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
+   * Save the current editing state to localStorage
+   */
+  function saveEditingState(sourceRef) {
+    try {
+      localStorage.setItem(CONFIG.storageKey, JSON.stringify({
+        sourceRef: sourceRef,
+        timestamp: Date.now(),
+        url: window.location.pathname
+      }));
+    } catch (e) {
+      console.warn('Failed to save editing state:', e);
+    }
+  }
+
+  /**
+   * Get and clear the saved editing state
+   */
+  function getAndClearEditingState() {
+    try {
+      const data = localStorage.getItem(CONFIG.storageKey);
+      if (!data) return null;
+
+      localStorage.removeItem(CONFIG.storageKey);
+      const state = JSON.parse(data);
+
+      // Only restore if it's recent (within 10 seconds) and same page
+      const isRecent = (Date.now() - state.timestamp) < 10000;
+      const samePage = state.url === window.location.pathname;
+
+      if (isRecent && samePage) {
+        return state.sourceRef;
+      }
+      return null;
+    } catch (e) {
+      console.warn('Failed to get editing state:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Check for saved editing state and restore editor on page load
+   */
+  function checkAndRestoreEditor() {
+    const sourceRef = getAndClearEditingState();
+    if (sourceRef) {
+      // Delay slightly to let page render
+      setTimeout(() => {
+        openEditorWithSourceRef(sourceRef);
+      }, 300);
+    }
+  }
 
   /**
    * Listen for messages from the background script
@@ -52,11 +196,17 @@
     }
 
     const sourceRef = sourceElement.getAttribute(CONFIG.sourceAttribute);
+    openEditorWithSourceRef(sourceRef);
+  }
 
+  /**
+   * Open editor with a specific source reference (used for restoring state)
+   */
+  function openEditorWithSourceRef(sourceRef) {
     // Fetch the source code from Laravel
     fetchSource(sourceRef)
       .then(data => {
-        renderEditor(clickedElement, sourceRef, data);
+        renderEditor(sourceRef, data);
       })
       .catch(error => {
         showNotification('Failed to load source: ' + error.message, 'error');
@@ -142,292 +292,489 @@
   /**
    * Render the floating editor UI
    */
-  function renderEditor(targetElement, sourceRef, data) {
+  async function renderEditor(sourceRef, data) {
     // Close any existing editor
-    closeEditor();
+    await closeEditor();
 
-    // Create the editor overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'refine-editor-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 999999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
+    // Inject animation styles
+    injectAnimationStyles();
 
-    // Create the editor container
+    // Create the editor container (positioned at bottom with padding)
     const editor = document.createElement('div');
     editor.id = 'refine-editor';
     editor.style.cssText = `
-      background: #1e1e1e;
-      border: 2px solid #3794ff;
-      border-radius: 8px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-      width: 90%;
-      max-width: 1200px;
-      height: 80%;
+      position: fixed;
+      bottom: 7px;
+      left: 7px;
+      right: 7px;
+      height: calc(55vh - 7px);
+      background: #1a1a1c;
+      z-index: 999999;
       display: flex;
       flex-direction: column;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), 0 2px 12px rgba(0, 0, 0, 0.3);
+      border-radius: 7px;
+      transform: translateY(calc(100% + 20px));
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     `;
 
     // Create the header
     const header = document.createElement('div');
     header.style.cssText = `
-      background: #2d2d2d;
-      color: #cccccc;
-      padding: 12px 16px;
-      border-bottom: 1px solid #3794ff;
+      background: #2a2a2c;
+      color: #ffffff;
+      padding: 7px;
+      padding-left:15px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-radius: 6px 6px 0 0;
+      min-height: 20px;
+      flex-shrink: 0;
     `;
 
+    // Left side of header (traffic lights + title)
+    const headerLeft = document.createElement('div');
+    headerLeft.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    `;
+
+    // Traffic light buttons
+    const trafficLights = document.createElement('div');
+    trafficLights.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+
+    // Red button (close)
+    const redButton = document.createElement('button');
+    redButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff5f57;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.15s ease;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    `;
+    redButton.onmouseover = () => {
+      redButton.style.background = '#ff4136';
+      redButton.style.transform = 'scale(1.1)';
+    };
+    redButton.onmouseout = () => {
+      redButton.style.background = '#ff5f57';
+      redButton.style.transform = 'scale(1)';
+    };
+
+    // Yellow button (minimize)
+    const yellowButton = document.createElement('button');
+    yellowButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #febc2e;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+      transition: all 0.15s ease;
+    `;
+    yellowButton.onmouseover = () => {
+      yellowButton.style.background = '#f5a623';
+      yellowButton.style.transform = 'scale(1.1)';
+    };
+    yellowButton.onmouseout = () => {
+      yellowButton.style.background = '#febc2e';
+      yellowButton.style.transform = 'scale(1)';
+    };
+
+    // Green button (maximize)
+    const greenButton = document.createElement('button');
+    greenButton.style.cssText = `
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #28c840;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+      transition: all 0.15s ease;
+    `;
+    greenButton.onmouseover = () => {
+      greenButton.style.background = '#1db954';
+      greenButton.style.transform = 'scale(1.1)';
+    };
+    greenButton.onmouseout = () => {
+      greenButton.style.background = '#28c840';
+      greenButton.style.transform = 'scale(1)';
+    };
+
+    trafficLights.appendChild(redButton);
+    trafficLights.appendChild(yellowButton);
+    trafficLights.appendChild(greenButton);
+
+    // Title
     const title = document.createElement('div');
     title.style.cssText = `
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 500;
+      color: #8e8e93;
+      letter-spacing: -0.01em;
     `;
-    title.textContent = `Editing: ${data.view_path} (Line ${data.line_number})`;
+    title.textContent = `${data.view_path}`;
 
+    // Line number badge
+    const lineBadge = document.createElement('span');
+    lineBadge.style.cssText = `
+      font-size: 10px;
+      font-weight: 600;
+      color: #636366;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      letter-spacing: 0.02em;
+    `;
+    lineBadge.textContent = `Line ${data.line_number}`;
+    title.appendChild(lineBadge);
+
+    headerLeft.appendChild(trafficLights);
+    headerLeft.appendChild(title);
+
+    // Right side of header (save button)
     const headerButtons = document.createElement('div');
     headerButtons.style.cssText = `
       display: flex;
+      align-items: center;
       gap: 8px;
     `;
 
     // Save button
     const saveButton = document.createElement('button');
-    saveButton.innerHTML = 'Save <span style="opacity: 0.7; font-size: 11px;">⏎</span>';
+    saveButton.textContent = 'Save';
     saveButton.style.cssText = `
-      background: #3794ff;
-      color: white;
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
       border: none;
-      padding: 6px 16px;
-      border-radius: 4px;
+      padding: 5px 14px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      transition: all 0.15s ease;
+      letter-spacing: -0.01em;
     `;
-    saveButton.onmouseover = () => saveButton.style.background = '#2080ff';
-    saveButton.onmouseout = () => saveButton.style.background = '#3794ff';
-
-    // Save & Close button
-    const saveCloseButton = document.createElement('button');
-    saveCloseButton.textContent = 'Save & Close';
-    saveCloseButton.style.cssText = `
-      background: #28a745;
-      color: white;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-    `;
-    saveCloseButton.onmouseover = () => saveCloseButton.style.background = '#218838';
-    saveCloseButton.onmouseout = () => saveCloseButton.style.background = '#28a745';
-
-    // Cancel button
-    const cancelButton = document.createElement('button');
-    cancelButton.textContent = 'Cancel';
-    cancelButton.style.cssText = `
-      background: #5a5a5a;
-      color: white;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-    `;
-    cancelButton.onmouseover = () => cancelButton.style.background = '#6a6a6a';
-    cancelButton.onmouseout = () => cancelButton.style.background = '#5a5a5a';
+    saveButton.onmouseover = () => {
+      saveButton.style.background = 'rgba(255, 255, 255, 0.14)';
+    };
+    saveButton.onmouseout = () => {
+      saveButton.style.background = 'rgba(255, 255, 255, 0.08)';
+    };
 
     headerButtons.appendChild(saveButton);
-    headerButtons.appendChild(saveCloseButton);
-    headerButtons.appendChild(cancelButton);
-    header.appendChild(title);
+    header.appendChild(headerLeft);
     header.appendChild(headerButtons);
 
-    // Create the textarea
-    const textarea = document.createElement('textarea');
-    textarea.id = 'refine-editor-textarea';
-    textarea.value = data.full_contents;
-    textarea.style.cssText = `
+    // Create iframe for Monaco editor
+    const iframe = document.createElement('iframe');
+    iframe.id = 'refine-editor-textarea';
+    iframe.className = 'refine-iframe';
+    iframe.src = chrome.runtime.getURL('monaco-editor.html');
+    iframe.style.cssText = `
       flex: 1;
-      background: #1e1e1e;
-      color: #d4d4d4;
+      background: #1a1a1c;
       border: none;
-      padding: 16px;
-      font-size: 14px;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      line-height: 1.6;
-      resize: none;
-      outline: none;
-      tab-size: 4;
+      overflow: hidden;
     `;
 
     // Create the footer with file info
     const footer = document.createElement('div');
+    footer.className = 'refine-footer';
     footer.style.cssText = `
-      background: #2d2d2d;
-      color: #888;
+      background: #2a2a2c;
+      color: #636366;
       padding: 8px 16px;
-      border-top: 1px solid #3a3a3a;
-      font-size: 12px;
-      border-radius: 0 0 6px 6px;
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      letter-spacing: -0.01em;
     `;
-    footer.textContent = `${data.file_path} • ${data.total_lines} lines`;
+
+    const footerLeft = document.createElement('span');
+    footerLeft.textContent = data.file_path;
+
+    const footerRight = document.createElement('span');
+    footerRight.style.cssText = `
+      color: #48484a;
+    `;
+    footerRight.textContent = `${data.total_lines} lines`;
+
+    footer.appendChild(footerLeft);
+    footer.appendChild(footerRight);
 
     // Assemble the editor
     editor.appendChild(header);
-    editor.appendChild(textarea);
+    editor.appendChild(iframe);
     editor.appendChild(footer);
-    overlay.appendChild(editor);
-
-    // Event handlers
-    saveButton.onclick = () => {
-      const newContents = textarea.value;
-      saveButton.disabled = true;
-      saveButton.textContent = 'Saving...';
-      saveButton.style.background = '#5a5a5a';
-
-      saveSource(sourceRef, newContents)
-        .then(() => {
-          showNotification('Saved successfully!', 'success');
-          saveButton.disabled = false;
-          saveButton.textContent = 'Save';
-          saveButton.style.background = '#3794ff';
-
-          // Force hard reload to bypass cache
-          setTimeout(() => {
-            hardReload();
-          }, 500);
-        })
-        .catch(error => {
-          showNotification('Save failed: ' + error.message, 'error');
-          saveButton.disabled = false;
-          saveButton.textContent = 'Save';
-          saveButton.style.background = '#3794ff';
-        });
-    };
-
-    saveCloseButton.onclick = () => {
-      const newContents = textarea.value;
-      saveCloseButton.disabled = true;
-      saveCloseButton.textContent = 'Saving...';
-      saveCloseButton.style.background = '#5a5a5a';
-
-      saveSource(sourceRef, newContents)
-        .then(() => {
-          showNotification('Saved successfully!', 'success');
-          closeEditor();
-
-          // Force hard reload to bypass cache
-          setTimeout(() => {
-            hardReload();
-          }, 500);
-        })
-        .catch(error => {
-          showNotification('Save failed: ' + error.message, 'error');
-          saveCloseButton.disabled = false;
-          saveCloseButton.textContent = 'Save & Close';
-          saveCloseButton.style.background = '#28a745';
-        });
-    };
-
-    cancelButton.onclick = closeEditor;
-
-    // Close on overlay click
-    overlay.onclick = (e) => {
-      if (e.target === overlay) {
-        closeEditor();
-      }
-    };
-
-    // Keyboard shortcuts
-    textarea.onkeydown = (e) => {
-      // Cmd/Ctrl + S to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        saveButton.click();
-      }
-
-      // Cmd/Ctrl + Enter to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        saveButton.click();
-      }
-
-      // Escape to cancel
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeEditor();
-      }
-
-      // Handle tab key for indentation
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const value = textarea.value;
-
-        textarea.value = value.substring(0, start) + '    ' + value.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + 4;
-      }
-    };
 
     // Append to body
-    document.body.appendChild(overlay);
-    currentEditor = overlay;
+    document.body.appendChild(editor);
+    currentEditor = editor;
 
-    // Focus the textarea and scroll to the target line
-    textarea.focus();
-    scrollToLine(textarea, data.line_number);
+    // Trigger slide-up animation after element is in DOM
+    // Use requestAnimationFrame to ensure the browser has rendered the initial state
+    requestAnimationFrame(() => {
+      // Add the animation class to trigger CSS animation
+      editor.classList.add('refine-editor-enter');
+    });
+
+    // Track editor ready state
+    let editorReady = false;
+
+    // Minimize function
+    const minimizeEditor = () => {
+      if (isMinimized) return;
+      isMinimized = true;
+      editor.classList.add('refine-editor-minimized');
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+    };
+
+    // Restore from minimized
+    const restoreEditor = () => {
+      if (!isMinimized) return;
+      isMinimized = false;
+      editor.classList.remove('refine-editor-minimized');
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      // Focus the editor after restoring
+      setTimeout(() => {
+        iframe.contentWindow.postMessage({ type: 'FOCUS' }, '*');
+      }, 100);
+    };
+
+    // Maximize/restore function
+    const toggleMaximize = () => {
+      // If minimized, restore first
+      if (isMinimized) {
+        restoreEditor();
+        return;
+      }
+
+      isMaximized = !isMaximized;
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      if (isMaximized) {
+        editor.classList.add('refine-editor-maximized');
+      } else {
+        editor.classList.remove('refine-editor-maximized');
+      }
+    };
+
+    // Set up message listener for iframe communication
+    messageHandler = (event) => {
+      if (event.source !== iframe.contentWindow) return;
+
+      const { type, payload } = event.data;
+
+      if (type === 'EDITOR_READY') {
+        editorReady = true;
+      } else if (type === 'SAVE') {
+        saveButton.click();
+      } else if (type === 'MINIMIZE') {
+        if (!isMinimized) {
+          minimizeEditor();
+        }
+      } else if (type === 'VALUE_RESPONSE') {
+        // Handle the value response for save operations
+        if (window.refineEditorCallback) {
+          window.refineEditorCallback(payload.value);
+          window.refineEditorCallback = null;
+        }
+      }
+    };
+
+    window.addEventListener('message', messageHandler);
+
+    // Escape key handler - minimize instead of close
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (!isMinimized) {
+          minimizeEditor();
+        }
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+    editor.escapeHandler = escapeHandler;
+
+    // Click outside handler - minimize the editor
+    const clickOutsideHandler = (e) => {
+      if (!editor.contains(e.target) && !isMinimized) {
+        minimizeEditor();
+      }
+    };
+    document.addEventListener('mousedown', clickOutsideHandler);
+    editor.clickOutsideHandler = clickOutsideHandler;
+
+    // Initialize Monaco editor in iframe once it's loaded
+    iframe.onload = () => {
+      iframe.contentWindow.postMessage({
+        type: 'INIT_EDITOR',
+        payload: {
+          value: data.full_contents,
+          language: 'html',
+          theme: 'vs-dark',
+          fontSize: 14,
+          lineHeight: 24,
+          minimap: true,
+          lineNumber: data.line_number
+        }
+      }, '*');
+    };
+
+    // Helper function to get editor value
+    const getEditorValue = () => {
+      return new Promise((resolve) => {
+        if (!editorReady) {
+          showNotification('Editor not ready yet', 'error');
+          resolve(null);
+          return;
+        }
+
+        window.refineEditorCallback = resolve;
+        iframe.contentWindow.postMessage({ type: 'GET_VALUE' }, '*');
+      });
+    };
+
+    // Header click to restore from minimized
+    header.onclick = (e) => {
+      // Don't trigger if clicking on traffic lights or save button
+      if (e.target === redButton || e.target === yellowButton ||
+          e.target === greenButton || e.target === saveButton ||
+          trafficLights.contains(e.target) || headerButtons.contains(e.target)) {
+        return;
+      }
+      if (isMinimized) {
+        restoreEditor();
+      }
+    };
+
+    // Update header cursor when minimized
+    header.style.cursor = 'default';
+
+    // Event handlers
+    redButton.onclick = (e) => {
+      e.stopPropagation();
+      closeEditor();
+    };
+
+    yellowButton.onclick = (e) => {
+      e.stopPropagation();
+      if (isMinimized) {
+        restoreEditor();
+      } else {
+        minimizeEditor();
+      }
+    };
+
+    greenButton.onclick = (e) => {
+      e.stopPropagation();
+      toggleMaximize();
+    };
+
+    saveButton.onclick = async () => {
+      const newContents = await getEditorValue();
+      if (!newContents) return;
+
+      saveButton.disabled = true;
+      saveButton.textContent = 'Saving...';
+      saveButton.style.opacity = '0.6';
+
+      saveSource(sourceRef, newContents)
+        .then(() => {
+          showNotification('Saved successfully!', 'success');
+          saveButton.disabled = false;
+          saveButton.textContent = 'Save';
+          saveButton.style.opacity = '1';
+
+          // Save the editing state so we can restore after reload
+          saveEditingState(sourceRef);
+
+          // Force hard reload to bypass cache
+          setTimeout(() => {
+            hardReload();
+          }, 500);
+        })
+        .catch(error => {
+          showNotification('Save failed: ' + error.message, 'error');
+          saveButton.disabled = false;
+          saveButton.textContent = 'Save';
+          saveButton.style.opacity = '1';
+        });
+    };
   }
 
   /**
-   * Scroll the textarea to a specific line number
-   */
-  function scrollToLine(textarea, lineNumber) {
-    const lines = textarea.value.split('\n');
-    const targetLine = Math.max(0, lineNumber - 1);
-
-    // Calculate the character position of the target line
-    let charPosition = 0;
-    for (let i = 0; i < targetLine && i < lines.length; i++) {
-      charPosition += lines[i].length + 1; // +1 for newline
-    }
-
-    // Set cursor to the beginning of the target line
-    textarea.setSelectionRange(charPosition, charPosition);
-
-    // Scroll to make the line visible (approximate)
-    const lineHeight = parseInt(getComputedStyle(textarea).lineHeight);
-    const scrollPosition = (targetLine - 5) * lineHeight; // Center the line
-    textarea.scrollTop = Math.max(0, scrollPosition);
-  }
-
-  /**
-   * Close the current editor
+   * Close the current editor with animation
    */
   function closeEditor() {
-    if (currentEditor) {
-      currentEditor.remove();
+    return new Promise((resolve) => {
+      if (!currentEditor) {
+        resolve();
+        return;
+      }
+
+      // Reset state
+      isMinimized = false;
+      isMaximized = false;
+
+      const editorToClose = currentEditor;
+
+      // Remove escape key handler
+      if (editorToClose.escapeHandler) {
+        document.removeEventListener('keydown', editorToClose.escapeHandler);
+      }
+
+      // Remove click outside handler
+      if (editorToClose.clickOutsideHandler) {
+        document.removeEventListener('mousedown', editorToClose.clickOutsideHandler);
+      }
+
+      // Remove message handler
+      if (messageHandler) {
+        window.removeEventListener('message', messageHandler);
+        messageHandler = null;
+      }
+
+      // Clear current editor reference immediately to prevent double-close
       currentEditor = null;
-    }
+
+      // Remove enter animation class and add exit animation class
+      editorToClose.classList.remove('refine-editor-enter');
+      editorToClose.classList.add('refine-editor-exit');
+
+      // Wait for animation to complete before removing element
+      editorToClose.addEventListener('animationend', () => {
+        editorToClose.remove();
+        resolve();
+      }, { once: true });
+
+      // Fallback: remove after animation duration if animationend doesn't fire
+      setTimeout(() => {
+        if (editorToClose.parentNode) {
+          editorToClose.remove();
+          resolve();
+        }
+      }, 400);
+    });
   }
 
   /**
@@ -528,4 +875,7 @@
 
   // Log that Refine is active
   console.log('Refine: Content script loaded and ready');
+
+  // Check for saved editing state and restore editor if needed
+  checkAndRestoreEditor();
 })();

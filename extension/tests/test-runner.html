@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Refine Extension Tests</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .test-controls {
+      margin-bottom: 30px;
+    }
+    button {
+      background: #3794ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #2080ff;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .results {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .result-item {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .result-item:last-child {
+      border-bottom: none;
+    }
+    .result-pass {
+      color: #28c840;
+    }
+    .result-fail {
+      color: #ff5f57;
+    }
+    .icon {
+      font-size: 18px;
+    }
+    .summary {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f8f8;
+      border-radius: 6px;
+    }
+    .summary.all-pass {
+      background: #e8f8ea;
+    }
+    .summary.has-fail {
+      background: #ffeaea;
+    }
+    .instructions {
+      background: #fff3cd;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 30px;
+    }
+    .instructions h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+    .instructions ul {
+      margin-bottom: 0;
+      color: #856404;
+    }
+    #console-output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      margin-top: 20px;
+    }
+    /* Mock element for testing */
+    .mock-element {
+      background: #e0e0e0;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 6px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Refine Extension Tests</h1>
+  <p class="subtitle">Test suite for the Refine live editor Chrome extension</p>
+
+  <div class="instructions">
+    <h3>Instructions</h3>
+    <ul>
+      <li>Make sure the Refine extension is installed and enabled</li>
+      <li>This page should be served from localhost or a .test domain</li>
+      <li>Right-click the mock element below and select "Edit with Refine" to test UI features</li>
+      <li>Click "Run All Tests" to execute the test suite</li>
+    </ul>
+  </div>
+
+  <div class="mock-element" data-source="tests/mock-file.blade.php:1:100">
+    Mock Element (right-click here to open Refine editor)
+  </div>
+
+  <div class="test-controls">
+    <button id="run-tests">Run All Tests</button>
+    <button id="clear-results">Clear Results</button>
+  </div>
+
+  <div class="results" id="results">
+    <p style="color: #999; text-align: center;">Click "Run All Tests" to start</p>
+  </div>
+
+  <div id="console-output"></div>
+
+  <script src="refine.test.js"></script>
+  <script>
+    const resultsEl = document.getElementById('results');
+    const consoleEl = document.getElementById('console-output');
+    const runBtn = document.getElementById('run-tests');
+    const clearBtn = document.getElementById('clear-results');
+
+    // Capture console output
+    const originalLog = console.log;
+    const originalError = console.error;
+    let consoleBuffer = [];
+
+    console.log = function(...args) {
+      consoleBuffer.push(args.join(' '));
+      updateConsole();
+      originalLog.apply(console, args);
+    };
+
+    console.error = function(...args) {
+      consoleBuffer.push('ERROR: ' + args.join(' '));
+      updateConsole();
+      originalError.apply(console, args);
+    };
+
+    function updateConsole() {
+      consoleEl.textContent = consoleBuffer.join('\n');
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function renderResults(testResults) {
+      if (!testResults || !testResults.results) {
+        resultsEl.innerHTML = '<p style="color: #999;">No results yet</p>';
+        return;
+      }
+
+      let html = '';
+
+      testResults.results.forEach(result => {
+        const className = result.pass ? 'result-pass' : 'result-fail';
+        const icon = result.pass ? '✓' : '✗';
+        html += `
+          <div class="result-item ${className}">
+            <span class="icon">${icon}</span>
+            <span>${result.message}</span>
+          </div>
+        `;
+      });
+
+      const summaryClass = testResults.failed > 0 ? 'has-fail' : 'all-pass';
+      html += `
+        <div class="summary ${summaryClass}">
+          <strong>Summary:</strong> ${testResults.passed} passed, ${testResults.failed} failed (${testResults.total} total)
+        </div>
+      `;
+
+      resultsEl.innerHTML = html;
+    }
+
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true;
+      runBtn.textContent = 'Running...';
+      consoleBuffer = [];
+
+      try {
+        const results = await RefineTests.runAll();
+        renderResults(results);
+      } catch (err) {
+        console.error('Test error:', err);
+        resultsEl.innerHTML = `<p style="color: red;">Error running tests: ${err.message}</p>`;
+      }
+
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run All Tests';
+    });
+
+    clearBtn.addEventListener('click', () => {
+      consoleBuffer = [];
+      consoleEl.textContent = '';
+      resultsEl.innerHTML = '<p style="color: #999; text-align: center;">Click "Run All Tests" to start</p>';
+    });
+  </script>
+</body>
+</html>

@@ -34,5 +34,16 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["monaco-editor.html", "monaco-init.js", "monaco/**/*", "gsap.min.js"],
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://*.test/*",
+        "https://*.test/*"
+      ]
+    }
+  ]
 }
