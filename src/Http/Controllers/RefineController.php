@@ -242,4 +242,177 @@ class RefineController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Get the history/backups for a file.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function history(Request $request)
+    {
+        $sourceRef = $request->input('ref');
+
+        if (!$sourceRef) {
+            return response()->json(['error' => 'Missing source reference'], 400);
+        }
+
+        // Decode the source reference
+        $decoded = BladeInstrumentation::decodeSourceReference($sourceRef);
+
+        if (!$decoded) {
+            return response()->json(['error' => 'Invalid source reference'], 400);
+        }
+
+        $viewPath = $decoded['path'];
+
+        // Resolve the view path to an absolute file path
+        $filePath = BladeInstrumentation::resolveViewPath($viewPath);
+
+        if (!$filePath || !file_exists($filePath)) {
+            return response()->json(['error' => 'File not found: ' . $viewPath], 404);
+        }
+
+        $fileName = basename($filePath);
+        $backupDir = storage_path(config('refine.file_writing.backup_path', 'refine/backups'));
+
+        $versions = [];
+
+        // Add current version first
+        $currentStats = stat($filePath);
+        $versions[] = [
+            'id' => 'current',
+            'label' => 'Current Version',
+            'timestamp' => $currentStats['mtime'],
+            'date' => date('M j, Y', $currentStats['mtime']),
+            'time' => date('g:i A', $currentStats['mtime']),
+            'relative' => $this->getRelativeTime($currentStats['mtime']),
+            'size' => $this->formatFileSize($currentStats['size']),
+            'is_current' => true,
+        ];
+
+        // Get all backups for this file
+        if (File::exists($backupDir)) {
+            $backups = File::glob($backupDir . '/' . $fileName . '.*.backup');
+
+            // Sort by modification time (newest first)
+            usort($backups, function ($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+
+            foreach ($backups as $index => $backupPath) {
+                $stats = stat($backupPath);
+                $backupName = basename($backupPath);
+
+                // Extract timestamp from filename (format: filename.blade.php.2024-12-07_15-30-45.backup)
+                preg_match('/\.(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.backup$/', $backupName, $matches);
+                $timestampStr = $matches[1] ?? '';
+
+                $versions[] = [
+                    'id' => base64_encode($backupPath),
+                    'label' => 'Version ' . (count($backups) - $index),
+                    'timestamp' => $stats['mtime'],
+                    'date' => date('M j, Y', $stats['mtime']),
+                    'time' => date('g:i A', $stats['mtime']),
+                    'relative' => $this->getRelativeTime($stats['mtime']),
+                    'size' => $this->formatFileSize($stats['size']),
+                    'is_current' => false,
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'file_path' => $filePath,
+                'view_path' => $viewPath,
+                'versions' => $versions,
+            ],
+        ]);
+    }
+
+    /**
+     * Get the contents of a specific backup version.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getVersion(Request $request)
+    {
+        $versionId = $request->input('version_id');
+
+        if (!$versionId) {
+            return response()->json(['error' => 'Missing version ID'], 400);
+        }
+
+        if ($versionId === 'current') {
+            return response()->json(['error' => 'Use fetch endpoint for current version'], 400);
+        }
+
+        // Decode the backup path
+        $backupPath = base64_decode($versionId);
+
+        if (!$backupPath || !file_exists($backupPath)) {
+            return response()->json(['error' => 'Backup not found'], 404);
+        }
+
+        // Verify it's in the backup directory for security
+        $backupDir = storage_path(config('refine.file_writing.backup_path', 'refine/backups'));
+        if (strpos(realpath($backupPath), realpath($backupDir)) !== 0) {
+            return response()->json(['error' => 'Invalid backup path'], 403);
+        }
+
+        $contents = file_get_contents($backupPath);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'contents' => $contents,
+            ],
+        ]);
+    }
+
+    /**
+     * Get a human-readable relative time string.
+     *
+     * @param int $timestamp
+     * @return string
+     */
+    protected function getRelativeTime(int $timestamp): string
+    {
+        $diff = time() - $timestamp;
+
+        if ($diff < 60) {
+            return 'Just now';
+        } elseif ($diff < 3600) {
+            $mins = floor($diff / 60);
+            return $mins . ' min' . ($mins > 1 ? 's' : '') . ' ago';
+        } elseif ($diff < 86400) {
+            $hours = floor($diff / 3600);
+            return $hours . ' hour' . ($hours > 1 ? 's' : '') . ' ago';
+        } elseif ($diff < 604800) {
+            $days = floor($diff / 86400);
+            return $days . ' day' . ($days > 1 ? 's' : '') . ' ago';
+        } else {
+            $weeks = floor($diff / 604800);
+            return $weeks . ' week' . ($weeks > 1 ? 's' : '') . ' ago';
+        }
+    }
+
+    /**
+     * Format file size in human readable format.
+     *
+     * @param int $bytes
+     * @return string
+     */
+    protected function formatFileSize(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        } elseif ($bytes < 1048576) {
+            return round($bytes / 1024, 1) . ' KB';
+        } else {
+            return round($bytes / 1048576, 1) . ' MB';
+        }
+    }
 }

@@ -93,6 +93,18 @@ class RefineServiceProvider extends ServiceProvider
                     \DevDojo\Refine\Http\Controllers\RefineController::class,
                     'save'
                 ])->name('refine.save');
+
+                // Get file history/backups
+                \Illuminate\Support\Facades\Route::get('/history', [
+                    \DevDojo\Refine\Http\Controllers\RefineController::class,
+                    'history'
+                ])->name('refine.history');
+
+                // Get specific backup version contents
+                \Illuminate\Support\Facades\Route::get('/version', [
+                    \DevDojo\Refine\Http\Controllers\RefineController::class,
+                    'getVersion'
+                ])->name('refine.version');
             });
     }
 }
