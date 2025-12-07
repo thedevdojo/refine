@@ -45,21 +45,42 @@ class BladeInstrumentation
             return $value;
         }
 
+        // Get the absolute file path for accurate line number calculation
+        $absolutePath = $this->getAbsolutePath($compiler);
+        $originalContent = $absolutePath && file_exists($absolutePath)
+            ? file_get_contents($absolutePath)
+            : null;
+
         // Instrument opening tags with source metadata
-        $value = $this->instrumentOpeningTags($value, $viewPath);
+        $value = $this->instrumentOpeningTags($value, $viewPath, $originalContent);
 
         // Instrument component tags if enabled
         if ($this->instrumentComponents) {
-            $value = $this->instrumentComponentTags($value, $viewPath);
+            $value = $this->instrumentComponentTags($value, $viewPath, $originalContent);
         }
 
         return $value;
     }
 
     /**
+     * Get the absolute file path from the compiler.
+     */
+    protected function getAbsolutePath(BladeCompiler $compiler): ?string
+    {
+        try {
+            $reflection = new \ReflectionClass($compiler);
+            $property = $reflection->getProperty('path');
+            $property->setAccessible(true);
+            return $property->getValue($compiler);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
      * Inject data-source attributes into HTML opening tags.
      */
-    protected function instrumentOpeningTags(string $value, string $viewPath): string
+    protected function instrumentOpeningTags(string $value, string $viewPath, ?string $originalContent = null): string
     {
         // Build a regex pattern for all target tags
         $tagPattern = implode('|', array_map(function($tag) {
@@ -88,8 +109,8 @@ class BladeInstrumentation
                 continue;
             }
 
-            // Calculate line number by counting newlines before this position
-            $lineNumber = substr_count(substr($value, 0, $tagPosition), "\n") + 1;
+            // Calculate line number - use original content if available for accuracy
+            $lineNumber = $this->calculateLineNumber($fullTag, $tagPosition, $value, $originalContent);
             $sourceRef = $this->encodeSourceReference($viewPath, $lineNumber);
 
             // Insert the data-source attribute right before the closing > or />
@@ -113,9 +134,36 @@ class BladeInstrumentation
     }
 
     /**
+     * Calculate the correct line number for a tag.
+     * Uses original file content when available for accurate line numbers.
+     */
+    protected function calculateLineNumber(string $fullTag, int $tagPosition, string $value, ?string $originalContent): int
+    {
+        // If we have original content, find the tag there for accurate line number
+        if ($originalContent !== null) {
+            // Try to find this exact tag in the original content
+            $tagStart = strpos($originalContent, $fullTag);
+            if ($tagStart !== false) {
+                return substr_count(substr($originalContent, 0, $tagStart), "\n") + 1;
+            }
+
+            // If exact match fails, try matching just the tag opening (first 100 chars)
+            // This helps when attributes might have been modified
+            $tagSignature = substr($fullTag, 0, min(100, strlen($fullTag)));
+            $tagStart = strpos($originalContent, $tagSignature);
+            if ($tagStart !== false) {
+                return substr_count(substr($originalContent, 0, $tagStart), "\n") + 1;
+            }
+        }
+
+        // Fallback: count newlines in the partial content
+        return substr_count(substr($value, 0, $tagPosition), "\n") + 1;
+    }
+
+    /**
      * Instrument Blade component tags (e.g., <x-alert>).
      */
-    protected function instrumentComponentTags(string $value, string $viewPath): string
+    protected function instrumentComponentTags(string $value, string $viewPath, ?string $originalContent = null): string
     {
         // Match component tags (including multi-line) and capture their position
         $pattern = '/<(x-[\w\.\-]+)(\s+[^>]*)?>/is';
@@ -139,8 +187,8 @@ class BladeInstrumentation
                 continue;
             }
 
-            // Calculate line number by counting newlines before this position
-            $lineNumber = substr_count(substr($value, 0, $tagPosition), "\n") + 1;
+            // Calculate line number - use original content if available for accuracy
+            $lineNumber = $this->calculateLineNumber($fullTag, $tagPosition, $value, $originalContent);
             $sourceRef = $this->encodeSourceReference($viewPath, $lineNumber);
 
             // Insert the data-source attribute right before the closing > or />

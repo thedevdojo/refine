@@ -465,7 +465,39 @@
       saveButton.style.background = 'rgba(255, 255, 255, 0.08)';
     };
 
+    // Chevron up button (shown when minimized)
+    const expandButton = document.createElement('button');
+    expandButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 10L8 6L12 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    expandButton.style.cssText = `
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    `;
+    expandButton.onmouseover = () => {
+      expandButton.style.background = 'rgba(255, 255, 255, 0.14)';
+    };
+    expandButton.onmouseout = () => {
+      expandButton.style.background = 'rgba(255, 255, 255, 0.08)';
+    };
+    expandButton.onclick = (e) => {
+      e.stopPropagation();
+      if (isMinimized) {
+        restoreEditor();
+      }
+    };
+
     headerButtons.appendChild(saveButton);
+    headerButtons.appendChild(expandButton);
     header.appendChild(headerLeft);
     header.appendChild(headerButtons);
 
@@ -534,9 +566,19 @@
       if (isMinimized) return;
       isMinimized = true;
 
-      // Set transition and animate to header height
-      editor.style.transition = 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      // Set transition for smooth animation
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+
+      // Animate to header height and snap to bottom with no padding
       editor.style.height = minimizedHeight;
+      editor.style.bottom = '0';
+      editor.style.left = '0';
+      editor.style.right = '0';
+      editor.style.borderRadius = '12px 12px 0 0';
+
+      // Hide save button, show expand button
+      saveButton.style.display = 'none';
+      expandButton.style.display = 'flex';
 
       // Hide content after animation starts
       setTimeout(() => {
@@ -554,14 +596,25 @@
       iframe.style.display = '';
       footer.style.display = '';
 
-      // Animate back to original height
-      editor.style.transition = 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      // Show save button, hide expand button
+      saveButton.style.display = '';
+      expandButton.style.display = 'none';
 
-      // Use maximized height if maximized, otherwise original
+      // Animate back to original position and height
+      editor.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+      editor.style.borderRadius = '12px';
+
+      // Use maximized height/position if maximized, otherwise original
       if (isMaximized) {
         editor.style.height = 'calc(100vh - 6px)';
+        editor.style.bottom = '3px';
+        editor.style.left = '3px';
+        editor.style.right = '3px';
       } else {
         editor.style.height = originalHeight;
+        editor.style.bottom = '7px';
+        editor.style.left = '7px';
+        editor.style.right = '7px';
       }
 
       // Focus the editor after restoring
