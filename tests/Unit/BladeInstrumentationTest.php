@@ -65,7 +65,7 @@ BLADE;
     }
 
     /** @test */
-    public function it_does_not_instrument_php_array_syntax()
+    public function it_does_not_instrument_php_tags_in_attributes()
     {
         $blade = <<<'BLADE'
 <div class="<?php echo \Illuminate\Support\Arr::toCssClasses([
@@ -76,7 +76,7 @@ BLADE;
 
         $result = $this->invokeInstrumentOpeningTags($blade, 'test.view');
 
-        // Should not instrument because it contains PHP array syntax (=>)
+        // Should not instrument because it contains <?php tags
         $this->assertStringNotContainsString('data-source=', $result);
     }
 
@@ -240,27 +240,84 @@ BLADE;
     /** @test */
     public function it_detects_blade_directives_correctly()
     {
+        // containsBladeDirective is now more permissive - it only blocks
+        // structural issues that would break HTML tag injection
         $testCases = [
-            '@if($test)' => true,
-            '@foreach($items as $item)' => true,
-            '@endif' => true,
-            '@php' => true,
-            '{{ $variable }}' => true,
-            '{!! $html !!}' => true,
-            '@click="handler"' => false,  // Alpine.js
-            '@mouseenter="show"' => false, // Alpine.js
-            'x-data="{ test: true }"' => false,
+            '<?php echo "test"; ?>' => true,  // PHP tags block instrumentation
+            ':items="$data"' => true,         // Dynamic Blade attributes block
+            '{{ $attributes }}' => true,      // Attribute spreading blocks
+            '{{ $variable }}' => false,       // Blade echo in values is OK
+            '{!! $html !!}' => false,         // Raw echo in values is OK
+            '@if($test)' => false,            // Directives outside tag are OK
+            '@click="handler"' => false,      // Alpine.js is OK
+            '@mouseenter="show"' => false,    // Alpine.js is OK
+            'x-data="{ test: true }"' => false, // Alpine is OK
+            'class="test"' => false,          // Plain attributes are OK
         ];
 
         foreach ($testCases as $line => $shouldContainDirective) {
             $result = $this->invokeContainsBladeDirective($line);
 
             if ($shouldContainDirective) {
-                $this->assertTrue($result, "Failed: '{$line}' should be detected as Blade directive");
+                $this->assertTrue($result, "Failed: '{$line}' should be detected as blocking directive");
             } else {
-                $this->assertFalse($result, "Failed: '{$line}' should NOT be detected as Blade directive");
+                $this->assertFalse($result, "Failed: '{$line}' should NOT be detected as blocking directive");
             }
         }
+    }
+
+    /** @test */
+    public function it_instruments_tags_with_blade_echo_in_attributes()
+    {
+        // This is the key test - tags with {{ }} in attribute values should be instrumented
+        $blade = '<a href="{{ route(\'login\') }}" class="btn">Login</a>';
+        $result = $this->invokeInstrumentOpeningTags($blade, 'welcome');
+
+        $this->assertStringContainsString('data-source=', $result);
+        $this->assertStringContainsString('href="{{ route(\'login\') }}"', $result);
+    }
+
+    /** @test */
+    public function it_instruments_default_laravel_welcome_page_structure()
+    {
+        // Simulate the structure of Laravel's default welcome.blade.php
+        $blade = <<<'BLADE'
+<body class="bg-white flex p-6">
+    <header class="w-full text-sm mb-6">
+        @if (Route::has('login'))
+            <nav class="flex items-center gap-4">
+                @auth
+                    <a href="{{ url('/dashboard') }}" class="btn">Dashboard</a>
+                @else
+                    <a href="{{ route('login') }}" class="btn">Log in</a>
+                @endauth
+            </nav>
+        @endif
+    </header>
+    <div class="flex items-center">
+        <main class="flex max-w-4xl">
+            <h1 class="mb-1 font-medium">Let's get started</h1>
+            <p class="mb-2 text-gray-600">Laravel has an incredibly rich ecosystem.</p>
+        </main>
+    </div>
+</body>
+BLADE;
+
+        $result = $this->invokeInstrumentOpeningTags($blade, 'welcome');
+
+        // All these tags should be instrumented
+        $this->assertStringContainsString('<body', $result);
+        $this->assertStringContainsString('<header', $result);
+        $this->assertStringContainsString('<nav', $result);
+        $this->assertStringContainsString('<div', $result);
+        $this->assertStringContainsString('<main', $result);
+        $this->assertStringContainsString('<h1', $result);
+        $this->assertStringContainsString('<p', $result);
+
+        // Count data-source attributes - should have multiple
+        $dataSourceCount = substr_count($result, 'data-source=');
+        $this->assertGreaterThanOrEqual(7, $dataSourceCount,
+            "Expected at least 7 data-source attributes, got {$dataSourceCount}");
     }
 
     /**

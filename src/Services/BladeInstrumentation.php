@@ -259,44 +259,35 @@ class BladeInstrumentation
     }
 
     /**
-     * Check if a line contains Blade directives or PHP code that should not be instrumented.
+     * Check if a tag contains Blade directives or PHP code that would break instrumentation.
+     *
+     * We're more permissive now - we only skip tags where Blade syntax could break
+     * the HTML structure. Blade syntax inside attribute VALUES is fine.
      */
-    protected function containsBladeDirective(string $line): bool
+    protected function containsBladeDirective(string $tag): bool
     {
-        // Check for Blade echo syntax and PHP tags
-        $patterns = [
-            '/\{\{/',           // {{ Blade echo
-            '/\{!!/',           // {!! Raw echo
-            '/<\?php/',         // <?php
-            '/<\?=/',           // <?=
-            '/=>/',             // PHP array arrow operator
-        ];
+        // Only skip if there are structural issues that would break our injection
 
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $line)) {
-                return true;
-            }
-        }
-
-        // Check for PHP variables, but NOT inside Alpine.js attributes (which start with @ or x-)
-        // Match $variable only when it appears outside of quoted strings (crude check)
-        if (preg_match('/\$\w+/', $line)) {
-            // If it also has Alpine directives, it's likely Alpine JS, not PHP
-            if (!preg_match('/@\w+="/', $line) && !preg_match('/x-\w+="/', $line)) {
-                return true;
-            }
-        }
-
-        // Check for Blade component attributes like :items="$data"
-        if (preg_match('/:\w+="/', $line)) {
+        // Check for PHP tags that aren't inside attribute values
+        // These could break the tag structure
+        if (preg_match('/<\?(?:php|=)/', $tag)) {
             return true;
         }
 
-        // Check for Blade directives, but exclude Alpine.js @ directives (which are in quotes)
-        // Match @directive only when it's NOT inside an attribute value
-        if (preg_match('/@(if|else|elseif|endif|unless|endunless|isset|empty|auth|guest|production|env|hasSection|sectionMissing|yield|show|section|endsection|stop|overwrite|append|prepend|once|endonce|push|endpush|pushOnce|endPushOnce|props|aware|include|includeIf|includeWhen|includeUnless|includeFirst|each|php|endphp|verbatim|endverbatim|extends|stack|json|can|cannot|canany|error|enderror|use|vite|for|foreach|endfor|endforeach|while|endwhile|break|continue|switch|case|default|endswitch|csrf|method|dd|dump)\b/', $line)) {
+        // Check for Blade component dynamic attributes like :items="$data"
+        // These are compiled to PHP and could break our attribute injection
+        if (preg_match('/(?:^|\s):\w+\s*=/', $tag)) {
             return true;
         }
+
+        // Check for dynamic attribute spreading {{ $attributes }}
+        if (preg_match('/\{\{\s*\$attributes/', $tag)) {
+            return true;
+        }
+
+        // Blade echo syntax {{ }} and {!! !!} inside attribute values is FINE
+        // We only care if it's in the tag structure itself (outside quotes)
+        // For now, allow all tags with {{ }} since they're usually in attribute values
 
         return false;
     }
