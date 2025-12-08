@@ -1,6 +1,6 @@
-# Refine Your Blade Views
-
 <img src="https://raw.githubusercontent.com/thedevdojo/refine/refs/heads/main/artwork.png" style="width:100%; height:auto;" alt="Refine Artwork" />
+
+# Refine
 
 Refine is a live [Blade](https://laravel.com/docs/blade) editor. It enables instant, in-browser editing of Blade templates. Right-click any element, click "Edit Code", and modify the source code directly.
 
