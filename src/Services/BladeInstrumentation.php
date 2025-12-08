@@ -88,7 +88,9 @@ class BladeInstrumentation
         }, $this->targetTags));
 
         // Match opening tags (including multi-line) and capture their position
-        $pattern = '/<(' . $tagPattern . ')(\s+[^>]*)?>/is';
+        // The pattern properly handles > characters inside quoted attribute values
+        // by matching quoted strings as units: "..." or '...'
+        $pattern = '/<(' . $tagPattern . ')(\s+(?:[^>"\']|"[^"]*"|\'[^\']*\')*)?>/is';
 
         $offset = 0;
         while (preg_match($pattern, $value, $matches, PREG_OFFSET_CAPTURE, $offset)) {
@@ -166,7 +168,8 @@ class BladeInstrumentation
     protected function instrumentComponentTags(string $value, string $viewPath, ?string $originalContent = null): string
     {
         // Match component tags (including multi-line) and capture their position
-        $pattern = '/<(x-[\w\.\-]+)(\s+[^>]*)?>/is';
+        // The pattern properly handles > characters inside quoted attribute values
+        $pattern = '/<(x-[\w\.\-]+)(\s+(?:[^>"\']|"[^"]*"|\'[^\']*\')*)?>/is';
 
         $offset = 0;
         while (preg_match($pattern, $value, $matches, PREG_OFFSET_CAPTURE, $offset)) {
@@ -330,6 +333,12 @@ class BladeInstrumentation
 
         // Check for dynamic attribute spreading {{ $attributes }}
         if (preg_match('/\{\{\s*\$attributes/', $tag)) {
+            return true;
+        }
+
+        // Check for @class and @style directives which contain => arrows
+        // The > in => can break our tag matching regex
+        if (preg_match('/@(?:class|style)\s*\(/', $tag)) {
             return true;
         }
 
