@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/thedevdojo/refine/refs/heads/main/artwork.png?updated=1" style="width:100%; height:auto;" alt="Refine Artwork" />
+<img src="https://raw.githubusercontent.com/thedevdojo/refine/refs/heads/main/image.png?updated=1" style="width:100%; height:auto;" alt="Refine Artwork" />
 
 # Refine
 
