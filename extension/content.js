@@ -296,7 +296,7 @@
       bottom: 7px;
       left: 7px;
       right: 7px;
-      height: calc(55vh - 7px);
+      height: calc(45vh - 7px);
       background: #1a1a1c;
       z-index: 999999;
       display: flex;
@@ -866,7 +866,7 @@
     let editorReady = false;
 
     // Store original height for restore
-    const originalHeight = 'calc(55vh - 7px)';
+    const originalHeight = 'calc(45vh - 7px)';
     const minimizedHeight = header.offsetHeight + 'px';
 
     // Minimize function
