@@ -240,19 +240,31 @@ BLADE;
     /** @test */
     public function it_detects_blade_directives_correctly()
     {
-        // containsBladeDirective is now more permissive - it only blocks
-        // structural issues that would break HTML tag injection
+        // containsBladeDirective blocks tags that contain Blade syntax outside of quoted attribute values
+        // Alpine.js @ directives are allowed because they're just HTML attributes
         $testCases = [
             '<?php echo "test"; ?>' => true,  // PHP tags block instrumentation
             ':items="$data"' => true,         // Dynamic Blade attributes block
-            '{{ $attributes }}' => true,      // Attribute spreading blocks
-            '{{ $variable }}' => false,       // Blade echo in values is OK
-            '{!! $html !!}' => false,         // Raw echo in values is OK
-            '@if($test)' => false,            // Directives outside tag are OK
-            '@click="handler"' => false,      // Alpine.js is OK
-            '@mouseenter="show"' => false,    // Alpine.js is OK
-            'x-data="{ test: true }"' => false, // Alpine is OK
+            '{{ $attributes }}' => true,      // Attribute spreading blocks (echo outside quotes)
+            '{{ $variable }}' => true,        // Blade echo outside quotes blocks
+            '{!! $html !!}' => true,          // Raw echo outside quotes blocks
+            '@if($test)' => true,             // Blade @if directive blocks
+            '@foreach($items as $item)' => true, // Blade @foreach directive blocks
+            '@class([...])' => true,          // @class directive blocks
+            '@style([...])' => true,          // @style directive blocks
+            '@js($var)' => true,              // @js directive blocks
+            '@checked($condition)' => true,   // @checked directive blocks
+            '@selected($condition)' => true,  // @selected directive blocks
+            '@disabled($condition)' => true,  // @disabled directive blocks
+            '@click="handler"' => false,      // Alpine.js event handler is OK (not a Blade directive)
+            '@mouseenter="show"' => false,    // Alpine.js event handler is OK
+            '@keydown.escape="close"' => false, // Alpine.js event handler is OK
+            '@submit.prevent="save"' => false, // Alpine.js event handler is OK
+            'x-data="{ test: true }"' => false, // Alpine x- attributes are OK
             'class="test"' => false,          // Plain attributes are OK
+            'class="{{ $var }}"' => false,    // Blade echo INSIDE quotes is OK
+            'href="{{ route(\'login\') }}"' => false, // Blade echo inside quotes is OK
+            '@click.prevent="handler"' => false, // Alpine with modifiers is OK
         ];
 
         foreach ($testCases as $line => $shouldContainDirective) {
@@ -275,6 +287,59 @@ BLADE;
 
         $this->assertStringContainsString('data-source=', $result);
         $this->assertStringContainsString('href="{{ route(\'login\') }}"', $result);
+    }
+
+    /** @test */
+    public function it_does_not_instrument_tags_with_blade_directives_inside()
+    {
+        // Tags with @if or other Blade directives inside should NOT be instrumented
+        // This prevents syntax errors when Blade compiles the directives
+        $blade = <<<'BLADE'
+<span
+    @if ($badgeTooltip)
+        x-tooltip="{ content: $badgeTooltip }"
+    @endif
+    {{ (new ComponentAttributeBag)->color('primary')->class(['fi-badge']) }}
+>
+BLADE;
+
+        $result = $this->invokeInstrumentOpeningTags($blade, 'test.view');
+
+        // Should NOT be instrumented because it contains @if and {{ }} outside quotes
+        $this->assertStringNotContainsString('data-source=', $result);
+    }
+
+    /** @test */
+    public function it_does_not_instrument_tags_with_dynamic_attribute_spreading()
+    {
+        // Tags that use {{ }} for dynamic attribute spreading should NOT be instrumented
+        $blade = '<div {{ $attributes->merge(["class" => "container"]) }}>Content</div>';
+        $result = $this->invokeInstrumentOpeningTags($blade, 'test.view');
+
+        // Should NOT be instrumented because {{ }} is outside quotes
+        $this->assertStringNotContainsString('data-source=', $result);
+    }
+
+    /** @test */
+    public function it_does_not_instrument_tags_with_blade_checked_directive()
+    {
+        // Tags with @checked or similar attribute directives should NOT be instrumented
+        $blade = '<input type="checkbox" @checked($isActive) />';
+        $result = $this->invokeInstrumentOpeningTags($blade, 'test.view');
+
+        // Should NOT be instrumented because @checked is a Blade directive
+        $this->assertStringNotContainsString('data-source=', $result);
+    }
+
+    /** @test */
+    public function it_does_not_instrument_tags_with_blade_class_directive()
+    {
+        // Tags with @class directive should NOT be instrumented
+        $blade = '<div @class(["active" => $isActive, "disabled" => $isDisabled])>Content</div>';
+        $result = $this->invokeInstrumentOpeningTags($blade, 'test.view');
+
+        // Should NOT be instrumented because @class is a Blade directive
+        $this->assertStringNotContainsString('data-source=', $result);
     }
 
     /** @test */

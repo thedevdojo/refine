@@ -312,13 +312,12 @@ class BladeInstrumentation
     /**
      * Check if a tag contains Blade directives or PHP code that would break instrumentation.
      *
-     * We're more permissive now - we only skip tags where Blade syntax could break
-     * the HTML structure. Blade syntax inside attribute VALUES is fine.
+     * We skip tags where Blade syntax could break the HTML structure or where
+     * dynamic attribute spreading is used. Blade syntax inside quoted attribute VALUES is fine.
+     * Alpine.js @ directives (like @click, @mouseenter) are allowed as they're just HTML attributes.
      */
     protected function containsBladeDirective(string $tag): bool
     {
-        // Only skip if there are structural issues that would break our injection
-
         // Check for PHP tags that aren't inside attribute values
         // These could break the tag structure
         if (preg_match('/<\?(?:php|=)/', $tag)) {
@@ -331,20 +330,34 @@ class BladeInstrumentation
             return true;
         }
 
-        // Check for dynamic attribute spreading {{ $attributes }}
-        if (preg_match('/\{\{\s*\$attributes/', $tag)) {
+        // First, remove all quoted strings to see what's left
+        // This lets us check for Blade syntax outside of attribute values
+        $withoutQuotes = preg_replace('/"[^"]*"|\'[^\']*\'/', '', $tag);
+
+        // Check for structural Blade directives that could change tag structure
+        // These include @if, @elseif, @else, @endif, @foreach, @endforeach, @for, @endfor,
+        // @while, @endwhile, @switch, @case, @break, @default, @endswitch, @isset, @endisset,
+        // @empty, @endempty, @auth, @endauth, @guest, @endguest, @env, @endenv,
+        // @unless, @endunless, @php, @endphp, @class, @style, @checked, @selected, @disabled,
+        // @readonly, @required, @js, @vite, @include, @each, @once, @push, @prepend, etc.
+        //
+        // We specifically EXCLUDE Alpine.js event directives which are followed by = or .
+        // (like @click="handler" or @click.prevent="handler") as these are just HTML attributes.
+        //
+        // Pattern explanation:
+        // - @(if|else|end|for|while|switch|case|break|default|isset|empty|auth|guest|env|unless|php|class|style|checked|selected|disabled|readonly|required|js|vite|include|each|once|push|prepend|stack|section|yield|extends|parent|show|slot|component|aware|fragment|verbatim|error|production|props|teleport)
+        // This matches Blade structural/output directives
+        $bladeDirectivePattern = '/@(if|elseif|else|endif|for|endfor|foreach|endforeach|forelse|empty|endforelse|while|endwhile|switch|case|break|default|endswitch|isset|endisset|auth|endauth|guest|endguest|env|endenv|unless|endunless|php|endphp|class|style|checked|selected|disabled|readonly|required|js|vite|viteReactRefresh|include|includeIf|includeWhen|includeUnless|includeFirst|each|once|endonce|push|endpush|pushOnce|endPushOnce|prepend|endprepend|prependOnce|endPrependOnce|stack|section|endsection|yield|extends|parent|show|slot|endslot|component|endcomponent|componentFirst|endComponentFirst|aware|fragment|endfragment|verbatim|endverbatim|error|enderror|production|endproduction|props|teleport|endteleport|persist|endpersist|session|endsession|use|can|cannot|endcan|endcannot|canany|endcanany|hasSection|sectionMissing|csrf|method|dd|dump|json)\b/i';
+
+        if (preg_match($bladeDirectivePattern, $withoutQuotes)) {
             return true;
         }
 
-        // Check for @class and @style directives which contain => arrows
-        // The > in => can break our tag matching regex
-        if (preg_match('/@(?:class|style)\s*\(/', $tag)) {
+        // Check for Blade echo syntax {{ }} or {!! !!} OUTSIDE of quoted attribute values
+        // This catches dynamic attribute spreading like {{ $attributes }} or {{ (new ComponentAttributeBag)... }}
+        if (preg_match('/\{\{|\{!!/', $withoutQuotes)) {
             return true;
         }
-
-        // Blade echo syntax {{ }} and {!! !!} inside attribute values is FINE
-        // We only care if it's in the tag structure itself (outside quotes)
-        // For now, allow all tags with {{ }} since they're usually in attribute values
 
         return false;
     }
