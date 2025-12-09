@@ -246,6 +246,145 @@ BLADE;
         $this->assertStringContainsString('<button', $result);
     }
 
+    /** @test */
+    public function it_handles_filament_dropdown_item_component()
+    {
+        // This test replicates the exact structure that was causing the error:
+        // A span tag with @if conditionals and {{ }} for dynamic attribute spreading
+        // From: vendor/filament/components/dropdown/list/item.blade.php
+        $blade = <<<'BLADE'
+@if (filled($badge))
+    @if ($badge instanceof \Illuminate\View\ComponentSlot)
+        {{ $badge }}
+    @else
+        <span
+            @if ($badgeTooltip)
+                x-tooltip="{
+                    content: @js($badgeTooltip),
+                    theme: $store.theme,
+                    allowHTML: @js($badgeTooltip instanceof \Illuminate\Contracts\Support\Htmlable),
+                }"
+            @endif
+            {{ (new ComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class(['fi-badge']) }}
+        >
+            {{ $badge }}
+        </span>
+    @endif
+@endif
+BLADE;
+
+        $result = $this->invokeInstrumentOpeningTags($blade, 'vendor.filament.components.dropdown.list.item');
+
+        // The span tag should NOT be instrumented because it contains @if and {{ }} outside quotes
+        // This verifies we don't corrupt the PHP code that was causing "syntax error, unexpected token '='"
+        $this->assertStringNotContainsString('data-source=', $result);
+
+        // Ensure the original code is preserved unchanged
+        $this->assertStringContainsString('@if ($badgeTooltip)', $result);
+        $this->assertStringContainsString('{{ (new ComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class([\'fi-badge\']) }}', $result);
+    }
+
+    /** @test */
+    public function it_handles_filament_icon_generation_with_named_parameters()
+    {
+        // This tests the generate_icon_html call which uses PHP 8 named parameters
+        // The code should not be corrupted by instrumentation
+        $blade = <<<'BLADE'
+@if ($icon)
+    {{
+        \Filament\Support\generate_icon_html($icon, $iconAlias, (new ComponentAttributeBag([
+            'wire:loading.remove.delay.' . config('filament.livewire_loading_delay', 'default') => $hasLoadingIndicator,
+            'wire:target' => $hasLoadingIndicator ? $loadingIndicatorTarget : false,
+        ]))->color(IconComponent::class, $iconColor), size: $iconSize)
+    }}
+@endif
+BLADE;
+
+        $result = $this->invokeInstrumentOpeningTags($blade, 'vendor.filament.components.dropdown.list.item');
+
+        // The Blade {{ }} blocks should not be modified
+        // This verifies we preserve PHP named parameters like "size: $iconSize"
+        $this->assertStringContainsString('size: $iconSize', $result);
+        $this->assertStringContainsString('generate_icon_html', $result);
+    }
+
+    /** @test */
+    public function it_handles_complex_filament_attribute_bag_usage()
+    {
+        // Tests complex attribute bag usage in Filament components
+        $blade = <<<'BLADE'
+<div
+    {{
+        $attributes
+            ->when(
+                $tag === 'form',
+                fn (ComponentAttributeBag $attributes) => $attributes->except(['action', 'class', 'method']),
+            )
+            ->merge([
+                'aria-disabled' => $disabled ? 'true' : null,
+                'disabled' => $disabled && blank($tooltip),
+            ], escape: false)
+            ->class([
+                'fi-dropdown-list-item',
+                'fi-disabled' => $disabled,
+            ])
+            ->color(ItemComponent::class, $color)
+    }}
+>
+BLADE;
+
+        $result = $this->invokeInstrumentOpeningTags($blade, 'vendor.filament.components.item');
+
+        // Should NOT be instrumented because it has {{ }} outside quotes
+        $this->assertStringNotContainsString('data-source=', $result);
+
+        // Should preserve PHP named parameters
+        $this->assertStringContainsString('escape: false', $result);
+    }
+
+    /** @test */
+    public function it_does_not_instrument_x_components_with_blade_conditionals()
+    {
+        // X-components with conditional attributes should not be instrumented
+        $blade = <<<'BLADE'
+<x-button
+    @if ($showIcon)
+        icon="heroicon-o-check"
+    @endif
+    {{ $attributes }}
+>
+    Click me
+</x-button>
+BLADE;
+
+        $result = $this->invokeInstrumentComponentTags($blade, 'components.button');
+
+        // Should NOT be instrumented because it has @if and {{ }} outside quotes
+        $this->assertStringNotContainsString('data-source=', $result);
+    }
+
+    /** @test */
+    public function it_instruments_simple_x_components()
+    {
+        // Simple X-components should still be instrumented
+        $blade = '<x-button type="submit" class="btn-primary">Submit</x-button>';
+        $result = $this->invokeInstrumentComponentTags($blade, 'components.form');
+
+        // Should be instrumented - no Blade syntax outside quotes
+        $this->assertStringContainsString('data-source=', $result);
+    }
+
+    /** @test */
+    public function it_instruments_x_components_with_blade_in_quotes()
+    {
+        // X-components with Blade echo INSIDE quotes should still be instrumented
+        $blade = '<x-button type="{{ $type }}" class="{{ $class }}">{{ $label }}</x-button>';
+        $result = $this->invokeInstrumentComponentTags($blade, 'components.form');
+
+        // Should be instrumented - Blade syntax is inside quotes
+        $this->assertStringContainsString('data-source=', $result);
+    }
+
     /**
      * Helper method to invoke protected method for testing
      */
