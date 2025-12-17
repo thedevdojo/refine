@@ -243,4 +243,6 @@ resources/views/components/alert.blade.php
 
 ---
 
+## Q2: Is the extension being developed within this repo. Or is the extension developed in another and the build files are being saved to this repo?
+
 *Have more questions? Add them here!*
