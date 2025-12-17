@@ -154,6 +154,12 @@ class RefineController extends Controller
             File::makeDirectory($backupDir, 0755, true);
         }
 
+        // Ensure .gitignore exists to prevent committing backups
+        $gitignorePath = $backupDir . '/.gitignore';
+        if (!File::exists($gitignorePath)) {
+            File::put($gitignorePath, "*\n");
+        }
+
         // Create a timestamped backup
         $fileName = basename($filePath);
         $timestamp = now()->format('Y-m-d_H-i-s');
